@@ -1,6 +1,5 @@
 package vm
 
-// DefaultMemSize is 16MB - typical for small RISC-V programs
 const DefaultMemSize = 16 * 1024 * 1024
 
 type Memory struct {

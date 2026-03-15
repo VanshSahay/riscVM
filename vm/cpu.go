@@ -6,11 +6,15 @@ import (
 )
 
 type CPU struct {
-	PC   uint32
-	Regs [32]uint32
-	Mem  *Memory
-	// Heap break for brk syscall; 0 means not set
-	Brk uint32
+	PC       uint32
+	Regs     [32]uint32
+	Mem      *Memory
+	Brk      uint32
+	LastPC   uint32 // address of last executed instruction (for UI/disassembly)
+	Exited   bool   // true after ecall exit
+	ExitCode int
+	// Stdout, when set (e.g. by WASM), receives write(1, ...) output instead of os.Stdout
+	Stdout io.Writer
 }
 
 func NewCPU(mem *Memory) *CPU {
@@ -21,13 +25,30 @@ func NewCPU(mem *Memory) *CPU {
 }
 
 func (c *CPU) Step() {
+	c.LastPC = c.PC
 	instr := c.Mem.LoadWord(c.PC)
 	decoded := Decode(instr)
+	// Handle ECALL
+	if _, isEcall := decoded.(Ecall); isEcall {
+		code, done, _ := c.handleSyscall()
+		if done {
+			c.Exited = true
+			c.ExitCode = code
+		} else {
+			c.PC += 4
+		}
+		c.Regs[0] = 0
+		return
+	}
+	if _, isEbreak := decoded.(Ebreak); isEbreak {
+		c.Regs[0] = 0
+		return
+	}
 	decoded.Execute(c)
 	if !decoded.ModifiesPC() {
 		c.PC += 4
 	}
-	c.Regs[0] = 0 // x0 is always zero
+	c.Regs[0] = 0
 }
 
 // Run executes instructions until ECALL exit(93) or EBREAK.
@@ -79,15 +100,20 @@ func (c *CPU) handleSyscall() (exitCode int, done bool, err error) {
 		buf := a1
 		n := a2
 		if fd == 1 || fd == 2 {
+			out := c.Stdout
+			if out == nil {
+				if fd == 1 {
+					out = os.Stdout
+				} else {
+					out = os.Stderr
+				}
+			}
 			var written int
 			for i := uint32(0); i < n; i++ {
 				b := c.Mem.LoadByte(buf + i)
-				if fd == 1 {
-					os.Stdout.Write([]byte{byte(b)})
-				} else {
-					os.Stderr.Write([]byte{byte(b)})
+				if _, err := out.Write([]byte{byte(b)}); err == nil {
+					written++
 				}
-				written++
 			}
 			c.Regs[10] = uint32(written)
 		} else {

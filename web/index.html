@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>riscVM</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="header">
+    <h1>riscVM</h1>
+    <button type="button" class="btn" id="btnPaste">Paste program</button>
+  </header>
+  <main class="main">
+    <section class="panel" id="panelCpu">
+      <h2>CPU</h2>
+      <div class="cpu-grid">
+        <div class="cpu-row"><span class="label">PC</span><span class="value" id="pc">0x00000000</span></div>
+        <div class="regs" id="regs"></div>
+      </div>
+    </section>
+    <section class="panel" id="panelMemory">
+      <h2>Memory</h2>
+      <div class="mem-view" id="memView"></div>
+    </section>
+    <section class="panel panel-right" id="panelRight">
+      <div class="panel-block">
+        <h2>Instructions</h2>
+        <div class="instr-current" id="instrCurrent">—</div>
+        <div class="instr-history scrollable" id="instrHistory"></div>
+      </div>
+      <div class="panel-block">
+        <h2>Output</h2>
+        <pre class="output-content scrollable" id="outputContent"></pre>
+      </div>
+    </section>
+  </main>
+  <div class="overlay" id="overlay" hidden>
+    <div class="modal">
+      <h2>Load program</h2>
+      <p class="hint">Paste ELF binary as base64, or raw bytes as hex (e.g. <code>93 00 10 00</code> or <code>0x00100093</code>). Assemble with <code>riscv32-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -o prog.elf prog.s</code> then <code>base64 -i prog.elf</code> (macOS) or <code>base64 &lt; prog.elf</code>.</p>
+      <textarea id="pasteInput" placeholder="Paste base64 ELF or hex bytes…" rows="8"></textarea>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="btnLoadElf">Load as ELF (base64)</button>
+        <button type="button" class="btn" id="btnLoadHex">Load as hex</button>
+        <button type="button" class="btn btn-ghost" id="btnCloseModal">Cancel</button>
+      </div>
+      <div class="error" id="loadError"></div>
+    </div>
+  </div>
+  <div class="controls">
+    <button type="button" class="btn" id="btnStep">Step</button>
+    <button type="button" class="btn" id="btnRun">Run</button>
+    <span class="status" id="status">Load a program to start.</span>
+  </div>
+  <script src="wasm_exec.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

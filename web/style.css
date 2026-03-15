@@ -1,0 +1,373 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #0a0a0a;
+  --border: 1px solid rgba(255, 255, 255, 0.12);
+  --text: rgba(255, 255, 255, 0.9);
+  --muted: rgba(255, 255, 255, 0.5);
+  --font: "IBM Plex Mono", "SF Mono", "Consolas", monospace;
+  --base: 15px;
+}
+
+html, body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--base);
+  -webkit-font-smoothing: antialiased;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.15rem;
+  border-bottom: var(--border);
+  flex-shrink: 0;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+}
+
+.btn {
+  background: transparent;
+  color: var(--text);
+  border: var(--border);
+  padding: 0.5rem 0.9rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.main {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0;
+  height: calc(100vh - 3.2rem - 3rem);
+  border-bottom: var(--border);
+}
+
+.panel {
+  border-right: var(--border);
+  padding: 0.85rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel:last-child {
+  border-right: none;
+}
+
+.panel h2 {
+  margin: 0 0 0.6rem 0;
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+/* Third column: Instructions on top, Output on bottom; each block scrolls only when content overflows */
+.panel-right {
+  flex-direction: column;
+  padding: 0;
+  gap: 0;
+}
+
+.panel-right .panel-block {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0.85rem 1.15rem;
+  border-bottom: var(--border);
+}
+
+.panel-right .panel-block:first-child {
+  flex: 0 1 45%;
+}
+
+.panel-right .panel-block:last-child {
+  border-bottom: none;
+  flex: 1 1 55%;
+}
+
+.panel-right .panel-block h2 {
+  flex-shrink: 0;
+}
+
+/* Scrollable areas: overflow only when content exceeds size */
+.scrollable {
+  overflow: auto;
+  min-height: 0;
+}
+
+.instr-history.scrollable {
+  flex: 1;
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.output-content {
+  flex: 1;
+  margin: 0;
+  min-height: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Themed scrollbars: thin, dark, only when needed */
+.scrollable::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollable::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.scrollable::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.scrollable::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox */
+.scrollable {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.cpu-grid {
+  display: grid;
+  gap: 0.2rem;
+  overflow: auto;
+  min-height: 0;
+}
+
+.cpu-grid::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.cpu-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cpu-grid::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.cpu-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.cpu-grid {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.cpu-row {
+  display: grid;
+  grid-template-columns: 3.2rem 1fr;
+  gap: 0.6rem;
+}
+
+.label {
+  color: var(--muted);
+}
+
+.value {
+  word-break: break-all;
+  font-size: 0.9rem;
+}
+
+.regs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.2rem 1.2rem;
+  margin-top: 0.3rem;
+}
+
+.regs .cpu-row {
+  grid-template-columns: 2.2rem 1fr;
+}
+
+.mem-view {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.mem-view::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.mem-view::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mem-view::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.mem-view::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.mem-view {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.mem-line {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.mem-addr {
+  flex-shrink: 0;
+  width: 9ch;
+}
+
+.mem-line-highlight {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.instr-current {
+  flex-shrink: 0;
+  padding: 0.5rem 0;
+  border-bottom: var(--border);
+  margin-bottom: 0.6rem;
+  font-size: 0.95rem;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1.15rem;
+  border-top: var(--border);
+  flex-shrink: 0;
+}
+
+.status {
+  margin-left: 0.6rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.modal {
+  background: var(--bg);
+  border: var(--border);
+  padding: 1.4rem;
+  width: 92%;
+  max-width: 560px;
+}
+
+.modal h2 {
+  margin: 0 0 0.85rem 0;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0 0 0.85rem 0;
+  line-height: 1.5;
+}
+
+.hint code {
+  font-size: 0.75rem;
+  padding: 0.12rem 0.25rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.modal textarea {
+  width: 100%;
+  padding: 0.7rem;
+  margin-bottom: 0.85rem;
+  background: transparent;
+  border: var(--border);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.88rem;
+  resize: vertical;
+  min-height: 140px;
+}
+
+.modal textarea::placeholder {
+  color: var(--muted);
+}
+
+.modal textarea:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.error {
+  margin-top: 0.6rem;
+  font-size: 0.88rem;
+  color: #e07070;
+}
+
+.error:empty {
+  display: none;
+}
