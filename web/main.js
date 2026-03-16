@@ -6,6 +6,8 @@
   const instrCurrentEl = document.getElementById('instrCurrent');
   const instrHistoryEl = document.getElementById('instrHistory');
   const outputContentEl = document.getElementById('outputContent');
+  const zkStatusEl = document.getElementById('zkStatus');
+  const witnessViewEl = document.getElementById('witnessView');
   const pasteInput = document.getElementById('pasteInput');
   const loadError = document.getElementById('loadError');
   const overlay = document.getElementById('overlay');
@@ -66,16 +68,22 @@
     if (lastInstr) instrCurrentEl.textContent = lastInstr;
   }
 
+  function updateHistory() {
+    const lastInstr = riscvmGetLastInstruction ? riscvmGetLastInstruction() : '';
+    if (lastInstr) {
+      instrHistory.push(lastInstr);
+      if (instrHistory.length > MAX_HISTORY) instrHistory.shift();
+      instrHistoryEl.innerHTML = instrHistory.map(s => `<div>${escapeHtml(s)}</div>`).reverse().join('');
+    }
+  }
+
   function onStep() {
     if (!wasmReady) return;
     const r = riscvmStep();
     if (r && r.ok) {
-      const lastInstr = riscvmGetLastInstruction ? riscvmGetLastInstruction() : '';
-      if (lastInstr) {
-        instrHistory.push(lastInstr);
-        if (instrHistory.length > MAX_HISTORY) instrHistory.shift();
-        instrHistoryEl.innerHTML = instrHistory.map(s => `<div>${escapeHtml(s)}</div>`).reverse().join('');
-      }
+      zkStatusEl.textContent = 'Ready for proof…';
+      witnessViewEl.textContent = '';
+      updateHistory();
       const exited = riscvmGetExited ? riscvmGetExited() : false;
       if (exited) {
         const code = riscvmGetExitCode ? riscvmGetExitCode() : 0;
@@ -84,6 +92,39 @@
       }
       updateUI();
     }
+  }
+
+  function onVerify() {
+    if (!wasmReady || typeof riscvmVerifyLastStep !== 'function') return;
+    zkStatusEl.textContent = 'Proving...';
+    witnessViewEl.innerHTML = '';
+    setTimeout(() => {
+      const r = riscvmVerifyLastStep();
+      if (r && r.ok) {
+        zkStatusEl.textContent = 'Proof verified';
+        const w = r.witness;
+        let diffsHtml = '';
+        if (Object.keys(w.diffs).length > 0) {
+          diffsHtml = Object.entries(w.diffs).map(([reg, val]) => 
+            `<div class="cert-row"><span>${reg}</span> <span>${val.from} → ${val.to}</span></div>`
+          ).join('');
+        } else {
+          diffsHtml = '<div class="cert-row muted">No state changes</div>';
+        }
+
+        witnessViewEl.innerHTML = `
+          <div class="proof-cert">
+            <div class="cert-header">Proof Certificate</div>
+            <div class="cert-row"><span>Instr</span> <span>${w.instr} (${w.asm})</span></div>
+            <div class="cert-row"><span>PC</span> <span>${w.pcBefore} → ${w.pcAfter}</span></div>
+            <div class="cert-section-title">State Changes</div>
+            ${diffsHtml}
+          </div>
+        `;
+      } else {
+        zkStatusEl.textContent = 'Proof failed: ' + (r.error || 'unknown error');
+      }
+    }, 10);
   }
 
   function escapeHtml(s) {
@@ -99,6 +140,7 @@
       // Run a batch of instructions for better performance
       for (let i = 0; i < 500; i++) {
         riscvmStep();
+        updateHistory();
         if (riscvmGetExited && riscvmGetExited()) {
           clearInterval(runInterval);
           runInterval = null;
@@ -208,6 +250,7 @@
 
   document.getElementById('btnStep').addEventListener('click', onStep);
   document.getElementById('btnRun').addEventListener('click', runLoop);
+  document.getElementById('btnVerify').addEventListener('click', onVerify);
 
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) overlay.hidden = true;

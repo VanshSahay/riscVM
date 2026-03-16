@@ -103,12 +103,73 @@ html, body {
 }
 
 .panel-right .panel-block:first-child {
-  flex: 0 1 45%;
+  flex: 0 1 30%;
+}
+
+.panel-right .panel-block:nth-child(2) {
+  flex: 0 1 30%;
+  border-bottom: var(--border);
 }
 
 .panel-right .panel-block:last-child {
   border-bottom: none;
-  flex: 1 1 55%;
+  flex: 1 1 40%;
+}
+
+.zk-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 0.6rem;
+}
+
+.zk-status {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.witness-view {
+  font-size: 0.82rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: var(--border);
+  flex: 1;
+}
+
+.proof-cert {
+  padding: 1rem;
+}
+
+.cert-header {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #88c0d0;
+  margin-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(136, 192, 208, 0.2);
+  padding-bottom: 0.4rem;
+}
+
+.cert-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+  font-family: var(--font);
+}
+
+.cert-row span:first-child {
+  color: var(--muted);
+}
+
+.cert-section-title {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 1rem 0 0.5rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.muted {
+  color: var(--muted) !important;
 }
 
 .panel-right .panel-block h2 {

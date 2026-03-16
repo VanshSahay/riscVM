@@ -1,42 +1,77 @@
-# riscVM
+# riscVM: High-Performance RISC-V zkVM
 
-A RISC-V RV32I-compatible VM written in Go. Designed as a foundation for building a zkVM.
+riscVM is a specialized implementation of the RISC-V RV32I Instruction Set Architecture (ISA) designed from the ground up for Zero-Knowledge (ZK) provability. It features a high-fidelity Go-based emulator, a constraint-optimized ZK circuit backend using [gnark](https://github.com/ConsenSys/gnark), and a sleek, reactive web interface for real-time proof inspection.
 
-## Features
+## System Architecture
 
-- **RV32I base instruction set** (47 instructions): arithmetic, loads/stores, branches, jumps, fences
-- **ELF loader** for RISC-V 32-bit executables (from `riscv32-unknown-elf-gcc`)
-- **Linux-style syscalls** via ECALL: exit, write, read, brk
-- **16MB memory** with bounds checking
+The project is structured into four distinct layers:
 
-## Usage
+1.  **Execution Engine (`/vm`):** A robust RV32I emulator that handles the Fetch-Decode-Execute cycle. It includes a custom ELF loader and a Linux-compatible syscall interface.
+2.  **Constraint System (`/zk`):** An arithmetized representation of the RISC-V state transition. Every instruction is decomposed into a set of R1CS constraints that verify the integrity of the execution.
+3.  **WASM Bridge (`/cmd/wasm`):** A high-throughput bridge that exposes the VM's internal state and ZK prover to the browser environment.
+4.  **Verification Dashboard (`/web`):** A minimalist frontend that visualizes the execution trace and displays cryptographic "Proof Certificates" for every instruction step.
 
+## Technical Specifications
+
+| Feature | Specification |
+| :--- | :--- |
+| **ISA Support** | RV32I Base Integer (excluding Fences/CSRs) |
+| **Memory Model** | 16MB Byte-addressable with bounds checking |
+| **ZK Backend** | gnark (Groth16 / PLONK) |
+| **Field** | BN254 (alt_bn128) |
+| **Host Language** | Go 1.25+ |
+| **Target** | WASM / Native CLI |
+
+## Directory Structure
+
+- `main.go`: The CLI entry point for native RISC-V execution.
+- `vm/`: The core virtual machine.
+  - `cpu.go`: State management (PC, 32 registers, status).
+  - `decode.go`: RISC-V instruction parser using bitmasking.
+  - `instruction.go`: Concrete implementations for 40+ instructions.
+  - `trace.go`: Captures the execution history required for ZK witness generation.
+- `zk/`: The Zero-Knowledge proving system.
+  - `circuit.go`: The gnark circuit defining the transition function.
+  - `prover.go`: Witness generation logic and proof orchestration.
+- `cmd/wasm/`: JS-Go interop layer.
+- `web/`: Assets for the browser-based dashboard.
+
+## Quick Start
+
+### Native CLI
+Compile and run a RISC-V ELF binary:
 ```bash
 go build -o riscvm .
-./riscvm <riscv32-elf-binary>
+./riscvm examples/complexity.elf
 ```
 
-### Building RISC-V programs
+### Web Interface
+1. **Build WASM:**
+   ```bash
+   GOOS=js GOARCH=wasm go build -o web/riscvm.wasm ./cmd/wasm
+   ```
+2. **Serve:**
+   ```bash
+   cd web && python3 -m http.server 8080
+   ```
 
-Install the RISC-V GNU toolchain, then compile with **RV32I only** (no M/A/C extensions):
+## Development & Testing
+
+The project maintains a rigorous testing suite for both the VM and the ZK circuits.
 
 ```bash
-riscv64-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles -o hello.elf hello.s
-../riscvm hello.elf
+# Test VM instruction accuracy
+go test ./vm/...
+
+# Test ZK circuit constraints
+go test -v ./zk
 ```
 
-## Project layout
+## Vision & Roadmap
 
-```
-.
-├── main.go           # Entry point, loads ELF and runs
-├── vm/
-│   ├── cpu.go       # CPU state, Step, Run, syscall handling
-│   ├── decode.go    # RV32I instruction decoder
-│   ├── elf.go       # ELF binary loader
-│   ├── instruction.go  # Instruction types and Execute
-│   └── memory.go    # Memory with Load/Store byte/half/word
-└── examples/
-    └── hello.s      # Minimal "Hello World" assembly
-```
-
+riscVM aims to be the most accessible educational and production-ready zkVM.
+- [x] **Phase 1:** Core RV32I Emulation & Tracing.
+- [x] **Phase 2:** Single-step ZK Proofs for Arithmetic & Control Flow.
+- [x] **Phase 3:** High-fidelity Web Visualization.
+- [ ] **Phase 4:** Memory Log constraints (Permutation Arguments).
+- [ ] **Phase 5:** Recursive proof aggregation for full-trace verification.

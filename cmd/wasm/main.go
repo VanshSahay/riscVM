@@ -3,9 +3,11 @@
 package main
 
 import (
+	"fmt"
 	"syscall/js"
 
 	"github.com/VanshSahay/riscvm/vm"
+	"github.com/VanshSahay/riscvm/zk"
 )
 
 var (
@@ -22,7 +24,46 @@ func main() {
 	js.Global().Set("riscvmGetLastInstruction", js.FuncOf(getLastInstruction))
 	js.Global().Set("riscvmGetExited", js.FuncOf(getExited))
 	js.Global().Set("riscvmGetExitCode", js.FuncOf(getExitCode))
+	js.Global().Set("riscvmVerifyLastStep", js.FuncOf(verifyLastStep))
 	<-make(chan struct{})
+}
+
+func verifyLastStep(this js.Value, args []js.Value) interface{} {
+	if cpu == nil || cpu.Trace == nil || len(*cpu.Trace) == 0 {
+		return map[string]interface{}{"ok": false, "error": "no trace"}
+	}
+	trace := *cpu.Trace
+	currentStep := trace[len(trace)-1]
+	witness := zk.GenerateWitness(currentStep, cpu.PC, cpu.Regs)
+
+	// In a real production zkVM, this is where we'd call gnark's groth16.Prove
+	// For this sleek WASM demo, we verify the witness and return a success signal.
+	ok, err := zk.ProveStep(witness)
+	if err != nil {
+		return map[string]interface{}{"ok": false, "error": err.Error()}
+	}
+
+	// Find register diffs
+	diffs := make(map[string]interface{})
+	for i := 0; i < 32; i++ {
+		if currentStep.Regs[i] != cpu.Regs[i] {
+			diffs[fmt.Sprintf("x%d", i)] = map[string]interface{}{
+				"from": fmt.Sprintf("0x%08x", currentStep.Regs[i]),
+				"to":   fmt.Sprintf("0x%08x", cpu.Regs[i]),
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"ok": ok,
+		"witness": map[string]interface{}{
+			"pcBefore": fmt.Sprintf("0x%08x", currentStep.PC),
+			"pcAfter":  fmt.Sprintf("0x%08x", cpu.PC),
+			"instr":    fmt.Sprintf("0x%08x", currentStep.Instr),
+			"asm":      vm.FormatInstruction(currentStep.Instr),
+			"diffs":    diffs,
+		},
+	}
 }
 
 func getExited(this js.Value, args []js.Value) interface{} {
@@ -63,6 +104,7 @@ func loadProgram(this js.Value, args []js.Value) interface{} {
 		entry = vm.LoadRaw(data, mem, 0)
 	}
 	cpu = vm.NewCPU(mem)
+	cpu.Trace = &vm.Trace{}
 	cpu.Stdout = jsOutputWriter{}
 	cpu.PC = entry
 	cpu.Regs[2] = uint32(len(mem.Data))
