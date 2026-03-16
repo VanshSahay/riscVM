@@ -81,9 +81,8 @@
     if (!wasmReady) return;
     const r = riscvmStep();
     if (r && r.ok) {
-      zkStatusEl.textContent = 'Ready for proof…';
-      witnessViewEl.textContent = '';
       updateHistory();
+      onVerify();
       const exited = riscvmGetExited ? riscvmGetExited() : false;
       if (exited) {
         const code = riscvmGetExitCode ? riscvmGetExitCode() : 0;
@@ -96,35 +95,32 @@
 
   function onVerify() {
     if (!wasmReady || typeof riscvmVerifyLastStep !== 'function') return;
-    zkStatusEl.textContent = 'Proving...';
-    witnessViewEl.innerHTML = '';
-    setTimeout(() => {
-      const r = riscvmVerifyLastStep();
-      if (r && r.ok) {
-        zkStatusEl.textContent = 'Proof verified';
-        const w = r.witness;
-        let diffsHtml = '';
-        if (Object.keys(w.diffs).length > 0) {
-          diffsHtml = Object.entries(w.diffs).map(([reg, val]) => 
-            `<div class="cert-row"><span>${reg}</span> <span>${val.from} → ${val.to}</span></div>`
-          ).join('');
-        } else {
-          diffsHtml = '<div class="cert-row muted">No state changes</div>';
-        }
-
-        witnessViewEl.innerHTML = `
-          <div class="proof-cert">
-            <div class="cert-header">Proof Certificate</div>
-            <div class="cert-row"><span>Instr</span> <span>${w.instr} (${w.asm})</span></div>
-            <div class="cert-row"><span>PC</span> <span>${w.pcBefore} → ${w.pcAfter}</span></div>
-            <div class="cert-section-title">State Changes</div>
-            ${diffsHtml}
-          </div>
-        `;
+    const r = riscvmVerifyLastStep();
+    if (r && r.ok) {
+      zkStatusEl.textContent = 'Proof verified';
+      const w = r.witness;
+      let diffsHtml = '';
+      if (Object.keys(w.diffs).length > 0) {
+        diffsHtml = Object.entries(w.diffs).map(([reg, val]) => 
+          `<div class="cert-row"><span>${reg}</span> <span>${val.from} → ${val.to}</span></div>`
+        ).join('');
       } else {
-        zkStatusEl.textContent = 'Proof failed: ' + (r.error || 'unknown error');
+        diffsHtml = '<div class="cert-row muted">No state changes</div>';
       }
-    }, 10);
+
+      witnessViewEl.innerHTML = `
+        <div class="proof-cert">
+          <div class="cert-header">Proof Certificate</div>
+          <div class="cert-row"><span>Instr</span> <span>${w.instr} (${w.asm})</span></div>
+          <div class="cert-row"><span>PC</span> <span>${w.pcBefore} → ${w.pcAfter}</span></div>
+          <div class="cert-section-title">State Changes</div>
+          ${diffsHtml}
+        </div>
+      `;
+    } else {
+      zkStatusEl.textContent = 'Proof failed: ' + (r.error || 'unknown error');
+      witnessViewEl.innerHTML = '';
+    }
   }
 
   function escapeHtml(s) {
@@ -137,10 +133,11 @@
     if (runInterval) return;
     runInterval = setInterval(() => {
       if (!wasmReady) return;
-      // Run a batch of instructions for better performance
-      for (let i = 0; i < 500; i++) {
+      // Run a small batch to keep UI responsive while showing proofs
+      for (let i = 0; i < 10; i++) {
         riscvmStep();
         updateHistory();
+        onVerify();
         if (riscvmGetExited && riscvmGetExited()) {
           clearInterval(runInterval);
           runInterval = null;
@@ -180,6 +177,9 @@
   }
 
   function loadProgram(uint8Array, asElf) {
+    if (!wasmReady || typeof riscvmLoadProgram !== 'function') {
+      return 'WASM not ready. Please wait or check console.';
+    }
     const r = riscvmLoadProgram(uint8Array, asElf);
     if (r && r.ok) {
       outputBuffer = '';
@@ -197,8 +197,13 @@
 
   async function initWasm() {
     try {
+      if (typeof Go === 'undefined') {
+        setStatus('WASM runtime (wasm_exec.js) not found');
+        return;
+      }
       const go = new Go();
       const resp = await fetch('riscvm.wasm');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
       const buf = await resp.arrayBuffer();
       const result = await WebAssembly.instantiate(buf, go.importObject);
       go.run(result.instance);
@@ -210,17 +215,24 @@
     }
   }
 
-  document.getElementById('btnPaste').addEventListener('click', () => {
+  const btnPaste = document.getElementById('btnPaste');
+  const btnCloseModal = document.getElementById('btnCloseModal');
+  const btnLoadElf = document.getElementById('btnLoadElf');
+  const btnLoadHex = document.getElementById('btnLoadHex');
+  const btnStep = document.getElementById('btnStep');
+  const btnRun = document.getElementById('btnRun');
+
+  if (btnPaste) btnPaste.addEventListener('click', () => {
     loadError.textContent = '';
     pasteInput.value = '';
     overlay.hidden = false;
   });
 
-  document.getElementById('btnCloseModal').addEventListener('click', () => {
+  if (btnCloseModal) btnCloseModal.addEventListener('click', () => {
     overlay.hidden = true;
   });
 
-  document.getElementById('btnLoadElf').addEventListener('click', () => {
+  if (btnLoadElf) btnLoadElf.addEventListener('click', () => {
     loadError.textContent = '';
     try {
       const bytes = parseBase64(pasteInput.value.trim());
@@ -232,7 +244,7 @@
     }
   });
 
-  document.getElementById('btnLoadHex').addEventListener('click', () => {
+  if (btnLoadHex) btnLoadHex.addEventListener('click', () => {
     loadError.textContent = '';
     try {
       const bytes = parseHex(pasteInput.value.trim());
@@ -248,11 +260,10 @@
     }
   });
 
-  document.getElementById('btnStep').addEventListener('click', onStep);
-  document.getElementById('btnRun').addEventListener('click', runLoop);
-  document.getElementById('btnVerify').addEventListener('click', onVerify);
+  if (btnStep) btnStep.addEventListener('click', onStep);
+  if (btnRun) btnRun.addEventListener('click', runLoop);
 
-  overlay.addEventListener('click', (e) => {
+  if (overlay) overlay.addEventListener('click', (e) => {
     if (e.target === overlay) overlay.hidden = true;
   });
 
