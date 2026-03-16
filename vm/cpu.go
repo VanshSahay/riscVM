@@ -15,6 +15,7 @@ type CPU struct {
 	ExitCode int
 	// Stdout, when set (e.g. by WASM), receives write(1, ...) output instead of os.Stdout
 	Stdout io.Writer
+	Trace  *Trace
 }
 
 func NewCPU(mem *Memory) *CPU {
@@ -27,6 +28,22 @@ func NewCPU(mem *Memory) *CPU {
 func (c *CPU) Step() {
 	c.LastPC = c.PC
 	instr := c.Mem.LoadWord(c.PC)
+	if c.Trace != nil {
+		step := TraceStep{
+			PC:    c.PC,
+			Instr: instr,
+			Regs:  c.Regs,
+		}
+		*c.Trace = append(*c.Trace, step)
+		// Temporarily set OnAccess to capture memory op for this instruction
+		c.Mem.OnAccess = func(addr uint32, value uint32, op int) {
+			idx := len(*c.Trace) - 1
+			(*c.Trace)[idx].MemAddr = addr
+			(*c.Trace)[idx].MemVal = value
+			(*c.Trace)[idx].MemOp = op
+		}
+		defer func() { c.Mem.OnAccess = nil }()
+	}
 	decoded := Decode(instr)
 	// Handle ECALL
 	if _, isEcall := decoded.(Ecall); isEcall {
@@ -41,6 +58,8 @@ func (c *CPU) Step() {
 		return
 	}
 	if _, isEbreak := decoded.(Ebreak); isEbreak {
+		c.Exited = true
+		c.ExitCode = -1
 		c.Regs[0] = 0
 		return
 	}
@@ -56,31 +75,10 @@ func (c *CPU) Step() {
 func (c *CPU) Run() (exitCode int, err error) {
 	const maxSteps = 1 << 24 // safety limit
 	for i := 0; i < maxSteps; i++ {
-		instr := c.Mem.LoadWord(c.PC)
-		decoded := Decode(instr)
-
-		// Handle ECALL before Execute
-		if _, isEcall := decoded.(Ecall); isEcall {
-			code, done, err := c.handleSyscall()
-			if err != nil {
-				return -1, err
-			}
-			if done {
-				return code, nil
-			}
-			c.PC += 4
-			c.Regs[0] = 0
-			continue
+		c.Step()
+		if c.Exited {
+			return c.ExitCode, nil
 		}
-		if _, isEbreak := decoded.(Ebreak); isEbreak {
-			return -1, nil // debugger trap, treat as exit
-		}
-
-		decoded.Execute(c)
-		if !decoded.ModifiesPC() {
-			c.PC += 4
-		}
-		c.Regs[0] = 0
 	}
 	return -1, nil // hit step limit
 }
