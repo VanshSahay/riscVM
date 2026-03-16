@@ -243,7 +243,7 @@ type Lui struct {
 }
 
 func (i Lui) Execute(cpu *CPU) {
-	cpu.Regs[i.Rd] = i.Imm << 12
+	cpu.Regs[i.Rd] = i.Imm
 }
 func (Lui) ModifiesPC() bool { return false }
 
@@ -253,7 +253,7 @@ type Auipc struct {
 }
 
 func (i Auipc) Execute(cpu *CPU) {
-	cpu.Regs[i.Rd] = cpu.PC + (i.Imm << 12)
+	cpu.Regs[i.Rd] = cpu.PC + i.Imm
 }
 func (Auipc) ModifiesPC() bool { return false }
 

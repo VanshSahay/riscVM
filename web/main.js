@@ -95,14 +95,19 @@
   function runLoop() {
     if (runInterval) return;
     runInterval = setInterval(() => {
-      if (riscvmGetExited && riscvmGetExited()) {
-        clearInterval(runInterval);
-        runInterval = null;
-        setStatus('Program exited.');
-        updateUI();
-        return;
+      if (!wasmReady) return;
+      // Run a batch of instructions for better performance
+      for (let i = 0; i < 500; i++) {
+        riscvmStep();
+        if (riscvmGetExited && riscvmGetExited()) {
+          clearInterval(runInterval);
+          runInterval = null;
+          setStatus('Program exited with code ' + (riscvmGetExitCode ? riscvmGetExitCode() : 0));
+          updateUI();
+          return;
+        }
       }
-      onStep();
+      updateUI();
     }, 50);
     setStatus('Running…');
   }
