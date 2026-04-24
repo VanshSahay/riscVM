@@ -3,7 +3,9 @@ package vm
 import (
 	"bytes"
 	"debug/elf"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -33,7 +35,7 @@ func LoadELFBytes(data []byte, mem *Memory) (entry uint32, err error) {
 			return 0, fmt.Errorf("segment overflow: vaddr=0x%x memsz=0x%x", vaddr, memsz)
 		}
 		n, err := prog.ReadAt(mem.Data[vaddr:vaddr+uint32(filesz)], 0)
-		if err != nil && err.Error() != "EOF" {
+		if err != nil && !errors.Is(err, io.EOF) {
 			return 0, fmt.Errorf("read segment: %w", err)
 		}
 		_ = n
@@ -92,7 +94,7 @@ func LoadELF(path string, mem *Memory) (entry uint32, err error) {
 		}
 
 		n, err := prog.ReadAt(mem.Data[vaddr:vaddr+uint32(filesz)], 0)
-		if err != nil && err.Error() != "EOF" {
+		if err != nil && !errors.Is(err, io.EOF) {
 			return 0, fmt.Errorf("read segment: %w", err)
 		}
 		_ = n

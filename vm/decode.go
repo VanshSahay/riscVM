@@ -1,17 +1,23 @@
 package vm
 
-// decodeBImm decodes B-type immediate: bits [12|11|10:5|4:1|0=0]
-func decodeBImm(instr uint32) int32 {
+// DecodeBImm decodes B-type immediate: bits [12|11|10:5|4:1|0=0]
+func DecodeBImm(instr uint32) int32 {
 	imm := ((instr >> 31) << 12) | (((instr >> 7) & 1) << 11) |
 		(((instr >> 25) & 0x3F) << 5) | (((instr >> 8) & 0xF) << 1)
 	return int32(imm<<19) >> 19
 }
 
-// decodeJImm decodes J-type immediate: bits [20|10:1|11|19:12|0=0]
-func decodeJImm(instr uint32) int32 {
+// DecodeJImm decodes J-type immediate: bits [20|10:1|11|19:12|0=0]
+func DecodeJImm(instr uint32) int32 {
 	imm := ((instr >> 31) << 20) | (((instr >> 12) & 0xFF) << 12) |
 		(((instr >> 20) & 1) << 11) | (((instr >> 21) & 0x3FF) << 1)
 	return int32(imm<<11) >> 11
+}
+
+// DecodeSImm decodes S-type immediate from bits [11:5|4:0]
+func DecodeSImm(instr uint32) int32 {
+	imm := ((instr >> 25) << 5) | ((instr >> 7) & 0x1F)
+	return int32(imm<<20) >> 20
 }
 
 func Decode(instr uint32) Instruction {
@@ -94,8 +100,7 @@ func Decode(instr uint32) Instruction {
 			return Lhu{Rd: rd, Rs1: rs1, Imm: iImm}
 		}
 	case 0x23: // Stores
-		sImm := int32(((instr >> 25) << 5) | ((instr >> 7) & 0x1F))
-		sImm = sImm << 20 >> 20
+		sImm := DecodeSImm(instr)
 		switch funct3 {
 		case 0:
 			return Sb{Rs1: rs1, Rs2: rs2, Imm: sImm}
@@ -105,7 +110,7 @@ func Decode(instr uint32) Instruction {
 			return Sw{Rs1: rs1, Rs2: rs2, Imm: sImm}
 		}
 	case 0x63: // Branches
-		bImm := decodeBImm(instr)
+		bImm := DecodeBImm(instr)
 		switch funct3 {
 		case 0:
 			return Beq{Rs1: rs1, Rs2: rs2, Imm: bImm}
@@ -121,7 +126,7 @@ func Decode(instr uint32) Instruction {
 			return Bgeu{Rs1: rs1, Rs2: rs2, Imm: bImm}
 		}
 	case 0x6F:
-		return Jal{Rd: rd, Imm: decodeJImm(instr)}
+		return Jal{Rd: rd, Imm: DecodeJImm(instr)}
 	case 0x67:
 		return Jalr{Rd: rd, Rs1: rs1, Imm: iImm}
 	case 0x73:

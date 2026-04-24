@@ -129,7 +129,9 @@ func step(this js.Value, args []js.Value) interface{} {
 	if cpu == nil {
 		return map[string]interface{}{"ok": false, "error": "no program loaded"}
 	}
-	cpu.Step()
+	if err := cpu.Step(); err != nil {
+		return map[string]interface{}{"ok": false, "error": err.Error()}
+	}
 	return map[string]interface{}{"ok": true}
 }
 

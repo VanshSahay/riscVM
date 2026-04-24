@@ -36,11 +36,14 @@ func GenerateWitness(current vm.TraceStep, nextPC uint32, nextRegs [32]uint32) S
 	case 0x37, 0x17: // U-type
 		imm := (instr >> 12) << 12
 		w.Imm = frontend.Variable(imm)
+	case 0x23: // S-type
+		imm := vm.DecodeSImm(instr)
+		w.Imm = frontend.Variable(uint32(imm))
 	case 0x63: // B-type
-		imm := DecodeBImm(instr)
+		imm := vm.DecodeBImm(instr)
 		w.Imm = frontend.Variable(uint32(imm))
 	case 0x6F: // J-type
-		imm := DecodeJImm(instr)
+		imm := vm.DecodeJImm(instr)
 		w.Imm = frontend.Variable(uint32(imm))
 	}
 
@@ -52,16 +55,4 @@ func ProveStep(w StepCircuit) (bool, error) {
 	// For this WASM demo, we simulate the verification.
 	// In production, gnark's Groth16.Prove/Verify would be used.
 	return true, nil
-}
-
-func DecodeBImm(instr uint32) int32 {
-	imm := ((instr >> 31) << 12) | (((instr >> 7) & 1) << 11) |
-		(((instr >> 25) & 0x3F) << 5) | (((instr >> 8) & 0xF) << 1)
-	return int32(imm<<19) >> 19
-}
-
-func DecodeJImm(instr uint32) int32 {
-	imm := ((instr >> 31) << 20) | (((instr >> 12) & 0xFF) << 12) |
-		(((instr >> 20) & 1) << 11) | (((instr >> 21) & 0x3FF) << 1)
-	return int32(imm<<11) >> 11
 }

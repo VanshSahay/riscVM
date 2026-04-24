@@ -1,9 +1,13 @@
 package vm
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"os"
 )
+
+var ErrStepLimit = errors.New("step limit exceeded")
 
 type CPU struct {
 	PC       uint32
@@ -25,9 +29,13 @@ func NewCPU(mem *Memory) *CPU {
 	}
 }
 
-func (c *CPU) Step() {
+func (c *CPU) Step() error {
 	c.LastPC = c.PC
+	c.Mem.LastErr = nil
 	instr := c.Mem.LoadWord(c.PC)
+	if c.Mem.LastErr != nil {
+		return fmt.Errorf("instruction fetch at 0x%x: %w", c.PC, c.Mem.LastErr)
+	}
 	if c.Trace != nil {
 		step := TraceStep{
 			PC:    c.PC,
@@ -45,6 +53,9 @@ func (c *CPU) Step() {
 		defer func() { c.Mem.OnAccess = nil }()
 	}
 	decoded := Decode(instr)
+	if _, isUnknown := decoded.(Unknown); isUnknown {
+		return fmt.Errorf("illegal instruction 0x%08x at PC=0x%x", instr, c.PC)
+	}
 	// Handle ECALL
 	if _, isEcall := decoded.(Ecall); isEcall {
 		code, done, _ := c.handleSyscall()
@@ -55,19 +66,24 @@ func (c *CPU) Step() {
 			c.PC += 4
 		}
 		c.Regs[0] = 0
-		return
+		return nil
 	}
 	if _, isEbreak := decoded.(Ebreak); isEbreak {
 		c.Exited = true
 		c.ExitCode = -1
 		c.Regs[0] = 0
-		return
+		return nil
 	}
+	c.Mem.LastErr = nil
 	decoded.Execute(c)
+	if c.Mem.LastErr != nil {
+		return fmt.Errorf("memory fault at PC=0x%x: %w", c.LastPC, c.Mem.LastErr)
+	}
 	if !decoded.ModifiesPC() {
 		c.PC += 4
 	}
 	c.Regs[0] = 0
+	return nil
 }
 
 // Run executes instructions until ECALL exit(93) or EBREAK.
@@ -75,12 +91,14 @@ func (c *CPU) Step() {
 func (c *CPU) Run() (exitCode int, err error) {
 	const maxSteps = 1 << 24 // safety limit
 	for i := 0; i < maxSteps; i++ {
-		c.Step()
+		if err := c.Step(); err != nil {
+			return -1, err
+		}
 		if c.Exited {
 			return c.ExitCode, nil
 		}
 	}
-	return -1, nil // hit step limit
+	return -1, ErrStepLimit
 }
 
 // RISC-V Linux ABI: a7=syscall#, a0-a5=args, a0=ret
