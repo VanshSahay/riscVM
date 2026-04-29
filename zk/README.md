@@ -37,12 +37,22 @@ The `PCAfter` is constrained through a hierarchical selector:
 2.  **Jumps (JAL/JALR):** $PCAfter$ is set to the target address. For `JALR`, the circuit bit-decomposes the target and forces the least significant bit (LSB) to zero.
 3.  **Default:** $PCAfter = PCBefore + 4$.
 
+## Groth16 Prove/Verify (`zk/prover.go`)
+
+`ProveStep` runs the full Groth16 pipeline for a single execution step:
+
+1. **`ensureSetup()`** — compiles `StepCircuit` to R1CS and calls `groth16.Setup` once per process, caching the proving key and verification key via `sync.Once`.
+2. **`groth16.Prove`** — generates a SNARK proof from the full witness (private + public inputs).
+3. **`groth16.Verify`** — verifies the proof against the cached verification key and the public witness (PC before/after, registers before/after).
+
+The WASM dashboard calls `ProveStep` on every instruction step; a successful return means the "Proof Verified" badge reflects a real cryptographic proof, not a simulation.
+
 ## Circuit Validation (`zk/zk_test.go`)
 
 We use the `gnark/test` package to verify the circuit against multiple backends.
 - **BN254 Field:** Our primary target for Ethereum compatibility.
 - **Groth16 Prover:** Generates succinct, fast-to-verify proofs.
-- **Negative Tests:** We intentionally provide invalid witnesses to ensure the circuit rejects incorrect state transitions.
+- **PLONK Prover:** No per-circuit trusted setup; used as a cross-check in tests.
 
 ## Future Roadmap: Memory & Recursion
 

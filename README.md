@@ -170,7 +170,7 @@ Circuit definition (circuit.go)
                                Proof ─────────► true / false
 ```
 
-In this repo, the gnark `test` harness runs the full prove/verify cycle automatically in `zk/zk_test.go`. The WASM dashboard currently simulates this (the `ProveStep` function is a stub — full in-browser Groth16 proving is the next step).
+In this repo, the gnark `test` harness runs the full prove/verify cycle automatically in `zk/zk_test.go`. The WASM dashboard calls the real Groth16 prover on every step — `ProveStep` compiles the circuit once, runs `groth16.Setup` once (cached via `sync.Once`), then calls `groth16.Prove` and `groth16.Verify` for each instruction. The "Proof Verified" badge in the dashboard reflects a genuine cryptographic proof.
 
 ---
 
@@ -190,7 +190,7 @@ riscVM/
 │   └── cpu_test.go      33 instruction-level unit tests
 ├── zk/
 │   ├── circuit.go       gnark R1CS circuit — the heart of the zkVM
-│   ├── prover.go        Witness generator (fills in concrete values)
+│   ├── prover.go        Witness generator + cached Groth16 prove/verify
 │   └── zk_test.go       Prove/verify tests for ADD and SUB
 ├── cmd/wasm/
 │   └── main.go          Go→JS bridge (syscall/js)
@@ -275,35 +275,26 @@ FENCE and FENCE.I are already decoded and no-opped in the VM. Add them to the ci
 **4. Memory constraints (the hard one)**
 Currently the circuit does not constrain loads and stores — it only constrains register state. A real zkVM must prove that every memory read is consistent with a previous write. The standard technique is a **memory permutation argument**: sort all (address, timestamp, value) memory access tuples and prove with a grand-product check that no value was forged. This is what PLOOKUP, Halo2's lookup tables, and similar systems are designed for.
 
-**5. Wire up real Groth16 prove/verify in WASM**
-`zk/prover.go:ProveStep` is currently a stub. Replace it with:
-```go
-pk, vk, _ := groth16.Setup(r1cs)
-proof, _ := groth16.Prove(r1cs, pk, witness)
-err := groth16.Verify(proof, vk, publicWitness)
-```
-Cache the proving key so setup only runs once. This is the step that makes the "Proof Verified" badge in the dashboard real.
-
-**6. Multi-step trace proof**
+**5. Multi-step trace proof**
 Right now each step is proved in isolation. To prove program correctness you need to chain steps: the `PCAfter` and `RegsAfter` of step N become the `PCBefore` and `RegsBefore` of step N+1. This can be done by:
 - Hashing the full state at each step and chaining the hashes (simple but expensive)
 - Using **recursive SNARKs**: each step proof is itself verified inside the next step's circuit (what Risc Zero does)
 
-**7. Compressed witness representation**
+**6. Compressed witness representation**
 The current witness sends all 32 registers for every step. In practice, most instructions touch at most 3 registers. Use a sparse representation and constraint that untouched registers carry over unchanged.
 
 ### Advanced
 
-**8. Recursive proof aggregation**
+**7. Recursive proof aggregation**
 Instead of proving N steps separately, use gnark's `std/recursion` package to recursively aggregate them: prove that a Groth16 proof is valid inside another Groth16 circuit. This compresses N proofs into 1 constant-size proof regardless of program length.
 
-**9. On-chain verifier**
+**8. On-chain verifier**
 Export the Groth16 verification key and generate a Solidity verifier with `gnark`'s `backend/groth16/bn254/solidity` exporter. Deploy it and submit your proof transaction — the EVM will verify it for ~250k gas.
 
-**10. RV32IM extension**
+**9. RV32IM extension**
 Add the M extension: MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU. Multiplication in a ZK circuit is expensive (each bit of the product needs a constraint), so this is where circuit optimization starts to matter.
 
-**11. Continuations / segmented proving**
+**10. Continuations / segmented proving**
 Programs longer than ~100k steps become impractical to prove in one shot (memory and time). Split execution into fixed-size **segments**, prove each segment separately, then prove that segments stitch together (matching boundary state). This is how SP1 and Risc Zero handle arbitrary-length programs.
 
 ---

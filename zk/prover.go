@@ -1,9 +1,34 @@
 package zk
 
 import (
+	"sync"
+
 	"github.com/VanshSahay/riscvm/vm"
+	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
 )
+
+var (
+	setupOnce  sync.Once
+	cachedR1CS constraint.ConstraintSystem
+	cachedPK   groth16.ProvingKey
+	cachedVK   groth16.VerifyingKey
+	setupErr   error
+)
+
+func ensureSetup() error {
+	setupOnce.Do(func() {
+		cachedR1CS, setupErr = frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &StepCircuit{})
+		if setupErr != nil {
+			return
+		}
+		cachedPK, cachedVK, setupErr = groth16.Setup(cachedR1CS)
+	})
+	return setupErr
+}
 
 func GenerateWitness(current vm.TraceStep, nextPC uint32, nextRegs [32]uint32) StepCircuit {
 	w := StepCircuit{
@@ -16,7 +41,6 @@ func GenerateWitness(current vm.TraceStep, nextPC uint32, nextRegs [32]uint32) S
 		w.RegsAfter[i] = frontend.Variable(nextRegs[i])
 	}
 
-	// Simple manual decoding for the witness fields (should match what the circuit does)
 	instr := current.Instr
 	opcode := instr & 0x7F
 	w.Opcode = frontend.Variable(opcode)
@@ -28,7 +52,6 @@ func GenerateWitness(current vm.TraceStep, nextPC uint32, nextRegs [32]uint32) S
 
 	w.Imm = frontend.Variable(0)
 
-	// Decode immediates
 	switch opcode {
 	case 0x13, 0x03, 0x67: // I-type
 		imm := int32(instr) >> 20
@@ -51,8 +74,28 @@ func GenerateWitness(current vm.TraceStep, nextPC uint32, nextRegs [32]uint32) S
 }
 
 func ProveStep(w StepCircuit) (bool, error) {
-	// For a real zkVM we would pre-compile and cache the CCS.
-	// For this WASM demo, we simulate the verification.
-	// In production, gnark's Groth16.Prove/Verify would be used.
+	if err := ensureSetup(); err != nil {
+		return false, err
+	}
+
+	fullWitness, err := frontend.NewWitness(&w, ecc.BN254.ScalarField())
+	if err != nil {
+		return false, err
+	}
+
+	proof, err := groth16.Prove(cachedR1CS, cachedPK, fullWitness)
+	if err != nil {
+		return false, err
+	}
+
+	publicWitness, err := fullWitness.Public()
+	if err != nil {
+		return false, err
+	}
+
+	if err := groth16.Verify(proof, cachedVK, publicWitness); err != nil {
+		return false, err
+	}
+
 	return true, nil
 }
