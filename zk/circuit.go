@@ -58,6 +58,7 @@ func (c *StepCircuit) Define(api frontend.API) error {
 	isJal := api.IsZero(api.Sub(c.Opcode, 0x6F))   // J-type
 	isJalr := api.IsZero(api.Sub(c.Opcode, 0x67))  // I-type
 	isBranch := api.IsZero(api.Sub(c.Opcode, 0x63))
+	isFence := api.IsZero(api.Sub(c.Opcode, 0x0F)) // FENCE / FENCE.I (no-op)
 
 	// I-type immediate: sign-extended bits[31:20]
 	// Raw 12-bit value; sign bit is bits[31].
@@ -271,8 +272,8 @@ func (c *StepCircuit) Define(api frontend.API) error {
 			continue
 		}
 		isRd := api.IsZero(api.Sub(c.Rd, i))
-		// Stores and branches don't write to Rd
-		writesRd := api.Sub(1, api.Add(isStore, isBranch))
+		// Stores, branches, and fences don't write to Rd
+		writesRd := api.Sub(1, api.Add(isStore, isBranch, isFence))
 		expected := api.Select(api.Mul(isRd, writesRd), targetVal, c.RegsBefore[i])
 		api.AssertIsEqual(c.RegsAfter[i], expected)
 	}

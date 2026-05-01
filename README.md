@@ -187,11 +187,12 @@ riscVM/
 │   ├── trace.go         Execution trace (per-step snapshots)
 │   ├── format.go        Disassembler (for UI labels)
 │   ├── elf.go           ELF32 loader
-│   └── cpu_test.go      33 instruction-level unit tests
+│   └── cpu_test.go      33 VM instruction-level unit tests
 ├── zk/
 │   ├── circuit.go       gnark R1CS circuit — the heart of the zkVM
 │   ├── prover.go        Witness generator + cached Groth16 prove/verify
-│   └── zk_test.go       Prove/verify tests for ADD and SUB
+│   └── zk_test.go       6 prove/verify tests (ADD, SUB, ADDI, BEQ,
+                         LUI, JALR, FENCE)
 ├── cmd/wasm/
 │   └── main.go          Go→JS bridge (syscall/js)
 ├── web/
@@ -235,7 +236,7 @@ cd web && python3 -m http.server 8080
 # 33 VM instruction unit tests
 go test ./vm/...
 
-# ZK circuit prove/verify (ADD and SUB, Groth16 + PLONK)
+# ZK circuit prove/verify (ADD, SUB, ADDI, BEQ, LUI, JALR, FENCE)
 go test -v ./zk/...
 
 # Everything
@@ -250,25 +251,19 @@ The ZK test suite (`zk/zk_test.go`) exercises the full gnark prove/verify pipeli
 
 - **ADD x3, x1, x2** with `x1=10, x2=20` → expects `x3=30, PC+=4`
 - **SUB x4, x3, x1** with `x3=30, x1=10` → expects `x4=20, PC+=4`
+- **ADDI x5, x1, 5** with `x1=10` → expects `x5=15, PC+=4`
+- **BEQ x1, x2, +8** — tested for both taken (`x1==x2`, PC jumps) and not-taken (`x1!=x2`, PC advances normally)
+- **LUI x6, 0x12345** → expects `x6=0x12345000, PC+=4`
+- **JALR x7, x1, 4** with `x1=100` → expects `x7=PC+4, PCAfter=104`
+- **FENCE** — treated as a no-op; all registers unchanged, PC advances by 4
 
-Both cases are checked under Groth16 and PLONK backends on the BN254 curve. If you supply a wrong witness (e.g. lie about the result), gnark rejects it.
+All cases are checked under the BN254 curve. If you supply a wrong witness (e.g. lie about the result), gnark rejects it.
 
 ---
 
 ## What to implement next
 
 Here are concrete next steps, roughly in order of difficulty:
-
-### Beginner
-
-**1. Expand the ZK test suite**
-Add circuits tests for ADDI, BEQ (taken and not taken), LUI, and JALR. The machinery is all there — you just need more witness fixtures in `zk/zk_test.go`.
-
-**2. Fence/CSR no-ops**
-FENCE and FENCE.I are already decoded and no-opped in the VM. Add them to the circuit as a selector that leaves all state unchanged.
-
-**3. Better disassembly**
-`vm/format.go` only handles a handful of instructions. Extend it to cover all 47 — the decode logic in `vm/decode.go` already does the hard part.
 
 ### Intermediate
 
