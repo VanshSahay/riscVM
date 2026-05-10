@@ -191,8 +191,10 @@ riscVM/
 ├── zk/
 │   ├── circuit.go       gnark R1CS circuit — the heart of the zkVM
 │   ├── prover.go        Witness generator + cached Groth16 prove/verify
-│   └── zk_test.go       6 prove/verify tests (ADD, SUB, ADDI, BEQ,
-                         LUI, JALR, FENCE)
+│   ├── zk_test.go       11 single-step prove/verify tests (ADD, SUB, ADDI,
+│   │                     BEQ, LUI, JALR, FENCE, LW, SW, ECALL, EBREAK, CSRRW)
+│   └── integration_test.go  Full-program proof: 7-step program with ALU,
+│                         load, store, and branch, proved end-to-end
 ├── cmd/wasm/
 │   └── main.go          Go→JS bridge (syscall/js)
 ├── web/
@@ -236,7 +238,7 @@ cd web && python3 -m http.server 8080
 # 33 VM instruction unit tests
 go test ./vm/...
 
-# ZK circuit prove/verify (ADD, SUB, ADDI, BEQ, LUI, JALR, FENCE)
+# ZK circuit prove/verify (11 single-step + 1 full-program integration)
 go test -v ./zk/...
 
 # Everything
@@ -256,8 +258,13 @@ The ZK test suite (`zk/zk_test.go`) exercises the full gnark prove/verify pipeli
 - **LUI x6, 0x12345** → expects `x6=0x12345000, PC+=4`
 - **JALR x7, x1, 4** with `x1=100` → expects `x7=PC+4, PCAfter=104`
 - **FENCE** — treated as a no-op; all registers unchanged, PC advances by 4
+- **LW / SW** — load constrains `MemVal → rd` and effective address `rs1 + imm`; store constrains `MemVal == rs2` and effective address
+- **ECALL / EBREAK** — treated as no-ops; registers unchanged, PC advances by 4
+- **CSRRW** — CSR instructions treated as no-ops (register state unchanged)
 
 All cases are checked under the BN254 curve. If you supply a wrong witness (e.g. lie about the result), gnark rejects it.
+
+The integration test (`zk/integration_test.go`) runs a complete 7-step RISC-V program — ALU ops, a store, a load, and a taken branch that skips an instruction — through the VM with tracing enabled, then proves every step end-to-end.
 
 ---
 
@@ -267,29 +274,24 @@ Here are concrete next steps, roughly in order of difficulty:
 
 ### Intermediate
 
-**4. Memory constraints (the hard one)**
-Currently the circuit does not constrain loads and stores — it only constrains register state. A real zkVM must prove that every memory read is consistent with a previous write. The standard technique is a **memory permutation argument**: sort all (address, timestamp, value) memory access tuples and prove with a grand-product check that no value was forged. This is what PLOOKUP, Halo2's lookup tables, and similar systems are designed for.
+**4. Memory permutation argument**
+The circuit now constrains individual load and store semantics (effective address, store value = rs2, load value written to rd). But it does not prove that a load returns the same value that a prior store wrote to that address. The standard technique is a **memory permutation argument**: sort all (address, timestamp, value) memory access tuples and prove with a grand-product check that no value was forged. This is what PLOOKUP, Halo2's lookup tables, and similar systems are designed for.
 
-**5. Multi-step trace proof**
-Right now each step is proved in isolation. To prove program correctness you need to chain steps: the `PCAfter` and `RegsAfter` of step N become the `PCBefore` and `RegsBefore` of step N+1. This can be done by:
-- Hashing the full state at each step and chaining the hashes (simple but expensive)
-- Using **recursive SNARKs**: each step proof is itself verified inside the next step's circuit (what Risc Zero does)
+**5. Recursive proof aggregation**
+Instead of proving N steps separately (as the integration test does now), use gnark's `std/recursion` package to recursively aggregate them: prove that a Groth16 proof is valid inside another Groth16 circuit. This compresses N proofs into 1 constant-size proof regardless of program length.
 
 **6. Compressed witness representation**
 The current witness sends all 32 registers for every step. In practice, most instructions touch at most 3 registers. Use a sparse representation and constraint that untouched registers carry over unchanged.
 
 ### Advanced
 
-**7. Recursive proof aggregation**
-Instead of proving N steps separately, use gnark's `std/recursion` package to recursively aggregate them: prove that a Groth16 proof is valid inside another Groth16 circuit. This compresses N proofs into 1 constant-size proof regardless of program length.
-
-**8. On-chain verifier**
+**7. On-chain verifier**
 Export the Groth16 verification key and generate a Solidity verifier with `gnark`'s `backend/groth16/bn254/solidity` exporter. Deploy it and submit your proof transaction — the EVM will verify it for ~250k gas.
 
-**9. RV32IM extension**
+**8. RV32IM extension**
 Add the M extension: MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU. Multiplication in a ZK circuit is expensive (each bit of the product needs a constraint), so this is where circuit optimization starts to matter.
 
-**10. Continuations / segmented proving**
+**9. Continuations / segmented proving**
 Programs longer than ~100k steps become impractical to prove in one shot (memory and time). Split execution into fixed-size **segments**, prove each segment separately, then prove that segments stitch together (matching boundary state). This is how SP1 and Risc Zero handle arbitrary-length programs.
 
 ---
