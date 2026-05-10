@@ -88,6 +88,18 @@ func FormatInstruction(instr uint32) string {
 		return "fence"
 	case FenceI:
 		return "fence.i"
+	case Csrrw:
+		return fmt.Sprintf("csrrw x%d, 0x%x, x%d", v.Rd, v.Csr, v.Rs1)
+	case Csrrs:
+		return fmt.Sprintf("csrrs x%d, 0x%x, x%d", v.Rd, v.Csr, v.Rs1)
+	case Csrrc:
+		return fmt.Sprintf("csrrc x%d, 0x%x, x%d", v.Rd, v.Csr, v.Rs1)
+	case Csrrwi:
+		return fmt.Sprintf("csrrwi x%d, 0x%x, %d", v.Rd, v.Csr, v.Uimm)
+	case Csrrsi:
+		return fmt.Sprintf("csrrsi x%d, 0x%x, %d", v.Rd, v.Csr, v.Uimm)
+	case Csrrci:
+		return fmt.Sprintf("csrrci x%d, 0x%x, %d", v.Rd, v.Csr, v.Uimm)
 	default:
 		return fmt.Sprintf(".word 0x%08x", instr)
 	}

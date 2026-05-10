@@ -497,3 +497,90 @@ func (Fence) Execute(cpu *CPU)   {}
 func (FenceI) Execute(cpu *CPU) {}
 func (Fence) ModifiesPC() bool  { return false }
 func (FenceI) ModifiesPC() bool { return false }
+
+// CSR instructions (Zicsr extension)
+type Csrrw struct {
+	Rd    uint8
+	Rs1   uint8
+	Csr   uint16
+}
+
+func (i Csrrw) Execute(cpu *CPU) {
+	old := cpu.csrRead(i.Csr)
+	cpu.Regs[i.Rd] = old
+	cpu.csrWrite(i.Csr, cpu.Regs[i.Rs1])
+}
+func (Csrrw) ModifiesPC() bool { return false }
+
+type Csrrs struct {
+	Rd    uint8
+	Rs1   uint8
+	Csr   uint16
+}
+
+func (i Csrrs) Execute(cpu *CPU) {
+	old := cpu.csrRead(i.Csr)
+	cpu.Regs[i.Rd] = old
+	if i.Rs1 != 0 {
+		cpu.csrWrite(i.Csr, old|cpu.Regs[i.Rs1])
+	}
+}
+func (Csrrs) ModifiesPC() bool { return false }
+
+type Csrrc struct {
+	Rd    uint8
+	Rs1   uint8
+	Csr   uint16
+}
+
+func (i Csrrc) Execute(cpu *CPU) {
+	old := cpu.csrRead(i.Csr)
+	cpu.Regs[i.Rd] = old
+	if i.Rs1 != 0 {
+		cpu.csrWrite(i.Csr, old & ^cpu.Regs[i.Rs1])
+	}
+}
+func (Csrrc) ModifiesPC() bool { return false }
+
+type Csrrwi struct {
+	Rd    uint8
+	Uimm  uint8
+	Csr   uint16
+}
+
+func (i Csrrwi) Execute(cpu *CPU) {
+	old := cpu.csrRead(i.Csr)
+	cpu.Regs[i.Rd] = old
+	cpu.csrWrite(i.Csr, uint32(i.Uimm))
+}
+func (Csrrwi) ModifiesPC() bool { return false }
+
+type Csrrsi struct {
+	Rd    uint8
+	Uimm  uint8
+	Csr   uint16
+}
+
+func (i Csrrsi) Execute(cpu *CPU) {
+	old := cpu.csrRead(i.Csr)
+	cpu.Regs[i.Rd] = old
+	if i.Uimm != 0 {
+		cpu.csrWrite(i.Csr, old|uint32(i.Uimm))
+	}
+}
+func (Csrrsi) ModifiesPC() bool { return false }
+
+type Csrrci struct {
+	Rd    uint8
+	Uimm  uint8
+	Csr   uint16
+}
+
+func (i Csrrci) Execute(cpu *CPU) {
+	old := cpu.csrRead(i.Csr)
+	cpu.Regs[i.Rd] = old
+	if i.Uimm != 0 {
+		cpu.csrWrite(i.Csr, old & ^uint32(i.Uimm))
+	}
+}
+func (Csrrci) ModifiesPC() bool { return false }

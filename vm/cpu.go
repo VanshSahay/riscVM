@@ -13,6 +13,7 @@ type CPU struct {
 	PC       uint32
 	Regs     [32]uint32
 	Mem      *Memory
+	CSRs     [4096]uint32
 	Brk      uint32
 	LastPC   uint32 // address of last executed instruction (for UI/disassembly)
 	Exited   bool   // true after ecall exit
@@ -20,6 +21,19 @@ type CPU struct {
 	// Stdout, when set (e.g. by WASM), receives write(1, ...) output instead of os.Stdout
 	Stdout io.Writer
 	Trace  *Trace
+}
+
+func (c *CPU) csrRead(addr uint16) uint32 {
+	if addr < 4096 {
+		return c.CSRs[addr]
+	}
+	return 0
+}
+
+func (c *CPU) csrWrite(addr uint16, val uint32) {
+	if addr < 4096 {
+		c.CSRs[addr] = val
+	}
 }
 
 func NewCPU(mem *Memory) *CPU {

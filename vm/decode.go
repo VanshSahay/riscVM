@@ -130,11 +130,28 @@ func Decode(instr uint32) Instruction {
 	case 0x67:
 		return Jalr{Rd: rd, Rs1: rs1, Imm: iImm}
 	case 0x73:
-		if (instr>>20)&0xFFF == 0 {
+		funct12 := (instr >> 20) & 0xFFF
+		if funct12 == 0 {
 			return Ecall{}
 		}
-		if (instr>>20)&0xFFF == 1 {
+		if funct12 == 1 {
 			return Ebreak{}
+		}
+		csr := uint16(funct12)
+		uimm := rs1 // rs1 field is uimm[4:0] for immediate CSR variants
+		switch funct3 {
+		case 1:
+			return Csrrw{Rd: rd, Rs1: rs1, Csr: csr}
+		case 2:
+			return Csrrs{Rd: rd, Rs1: rs1, Csr: csr}
+		case 3:
+			return Csrrc{Rd: rd, Rs1: rs1, Csr: csr}
+		case 5:
+			return Csrrwi{Rd: rd, Uimm: uimm, Csr: csr}
+		case 6:
+			return Csrrsi{Rd: rd, Uimm: uimm, Csr: csr}
+		case 7:
+			return Csrrci{Rd: rd, Uimm: uimm, Csr: csr}
 		}
 	case 0x0F:
 		if funct3 == 0 {
