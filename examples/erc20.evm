@@ -1,0 +1,187 @@
+# ERC20 contract: transfer, balanceOf, totalSupply, mint
+# Uses simplified storage (256 slots, keyed by low byte of key).
+#
+# Selectors:
+#   0xa9059cbb  transfer(address,uint256)
+#   0x70a08231  balanceOf(address)
+#   0x18160ddd  totalSupply()
+#   0x40c10f19  mint(address,uint256)
+#
+# Storage layout:
+#   Slot 0: totalSupply
+#   Balance slots: key[0] % 256
+
+# ---- Dispatch ----
+PUSH1 0             # [0]
+CALLDATALOAD        # [selector_word]
+PUSH1 0xE0          # [selector_word, 224]
+SHR                 # [selector]
+
+# Check transfer 0xa9059cbb
+DUP1                # [selector, selector]
+PUSH4 0xa9059cbb    # [selector, selector, 0xa9059cbb]
+EQ                  # [selector, is_transfer]
+PUSH1 %transfer     # [selector, is_transfer, pc]
+JUMPI               # [selector]
+
+# Check balanceOf 0x70a08231
+DUP1
+PUSH4 0x70a08231
+EQ
+PUSH1 %balanceOf
+JUMPI
+
+# Check totalSupply 0x18160ddd
+DUP1
+PUSH4 0x18160ddd
+EQ
+PUSH1 %totalSupply
+JUMPI
+
+# Check mint 0x40c10f19
+DUP1
+PUSH4 0x40c10f19
+EQ
+PUSH1 %mint
+JUMPI
+
+# Unknown selector — REVERT
+PUSH1 0
+PUSH1 0
+REVERT
+
+# ---- transfer(address to, uint256 amount) ----
+transfer:
+POP                     # discard selector
+PUSH1 4
+CALLDATALOAD            # [to]
+PUSH1 36
+CALLDATALOAD            # [to, amount]
+CALLER                  # [to, amount, sender]
+
+# Save args in memory (MSTORE pops offset, then value — top of stack)
+# Stack is [to, amount, sender]. Save from top: sender first, then amount, then to.
+PUSH1 64
+MSTORE                  # mem[64] = sender,  []: [to, amount]
+PUSH1 32
+MSTORE                  # mem[32] = amount, []: [to]
+PUSH1 0
+MSTORE                  # mem[0] = to,  []: []
+
+# Load sender balance: SLOAD(mem[64])
+PUSH1 64
+MLOAD                   # [sender]
+SLOAD                   # [sender_bal]
+
+# Load amount for comparison
+PUSH1 32
+MLOAD                   # [sender_bal, amount]
+
+# Check sufficient: sender_bal >= amount ?
+# Save both values before LT consumes them, then LT compares correctly
+DUP1                    # [sender_bal, amount, amount]
+DUP3                    # [sender_bal, amount, amount, sender_bal]
+SWAP1                   # [sender_bal, amount, sender_bal, amount]
+# LT = top < second. amount < sender_bal → sufficient
+LT                      # [sender_bal, amount, sufficient]
+PUSH1 %do_transfer
+JUMPI                   # jump if sufficient (popped condition)
+
+# Insufficient balance
+PUSH1 0
+PUSH1 0
+REVERT
+
+do_transfer:
+# Stack after JUMPI: [sender_bal, amount]
+# Subtract: sender_bal - amount
+SWAP1                   # [amount, sender_bal]
+SUB                     # [sender_bal - amount]
+
+# SSTORE sender's new balance
+PUSH1 64
+MLOAD                   # [new_bal, sender]
+SSTORE                  # [] (key=sender, val=new_bal)
+
+# Update recipient balance
+PUSH1 0
+MLOAD                   # [to]
+SLOAD                   # [to_bal]
+PUSH1 32
+MLOAD                   # [to_bal, amount]
+ADD                     # [to_bal + amount]
+
+PUSH1 0
+MLOAD                   # [new_to_bal, to]
+SSTORE                  # [] (key=to, val=new_to_bal)
+
+# Return uint256(1) = success
+PUSH1 1
+PUSH1 0
+MSTORE
+PUSH1 32
+PUSH1 0
+RETURN
+
+# ---- balanceOf(address owner) ----
+balanceOf:
+POP                     # discard selector
+PUSH1 4
+CALLDATALOAD            # [owner]
+SLOAD                   # [bal]
+
+# Return balance as uint256
+PUSH1 0
+MSTORE                  # mem[0] = bal
+PUSH1 32
+PUSH1 0
+RETURN
+
+# ---- totalSupply() ----
+totalSupply:
+POP
+PUSH1 0                 # key = slot 0 (totalSupply)
+SLOAD                   # [totalSupply]
+
+PUSH1 0
+MSTORE                  # mem[0] = totalSupply
+PUSH1 32
+PUSH1 0
+RETURN
+
+# ---- mint(address to, uint256 amount) ----
+mint:
+POP
+PUSH1 4
+CALLDATALOAD            # [to]
+PUSH1 36
+CALLDATALOAD            # [to, amount]
+
+# Load recipient's current balance (DUP2: duplicate 'to' which is 2nd from top)
+DUP2
+SLOAD                   # [to, amount, to_bal]
+
+# Add amount
+SWAP1                   # [to, to_bal, amount]
+ADD                     # [to, new_bal]
+
+# SSTORE recipient
+SWAP1                   # [new_bal, to]  -- SSTORE pops key(to) then val(new_bal)
+SSTORE                  # []
+
+# Update totalSupply
+PUSH1 0
+SLOAD                   # [total]
+PUSH1 36
+CALLDATALOAD            # [total, amount]
+ADD                     # [new_total]
+PUSH1 0                 # [new_total, 0]
+SSTORE                  # [] (key=0, val=new_total)
+
+# Return true
+PUSH1 1
+PUSH1 0
+MSTORE
+PUSH1 32
+PUSH1 0
+RETURN

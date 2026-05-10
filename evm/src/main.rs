@@ -6,10 +6,12 @@ mod u256;
 use u256::*;
 
 // ── Memory layout ────────────────────────────────────────────────
-// zkVM copies EVM bytecode + calldata to 0x800000:
-//   [u32 LE: code_len][u32 LE: calldata_len][code...][calldata...]
-// On RETURN, output is written to 0x800000:
-//   [u32 LE: out_len][out bytes...]
+// zkVM copies EVM bytecode + calldata + optional storage init to 0x800000:
+//   [u32 LE: code_len][u32 LE: calldata_len][u32 LE: has_storage_init (0|1)]
+//   [code...][calldata...]
+//   [if has_storage_init: STORAGE_SLOTS*32 bytes of storage data]
+// On exit, output is written to 0x800000:
+//   [u32 LE: return_data_len][return data...][STORAGE_SLOTS*32 bytes final storage]
 const INPUT_ADDR: usize = 0x800000;
 const OUTPUT_ADDR: usize = 0x800000;
 
@@ -84,7 +86,15 @@ struct Evm<'a> {
 }
 
 impl<'a> Evm<'a> {
-    fn new(code: &'a [u8], calldata: &'a [u8]) -> Self {
+    fn new(code: &'a [u8], calldata: &'a [u8], storage_init: Option<&[u32; STORAGE_SLOTS * 8]>) -> Self {
+        let mut storage = [[0u32; 8]; STORAGE_SLOTS];
+        if let Some(init) = storage_init {
+            for i in 0..STORAGE_SLOTS {
+                for j in 0..8 {
+                    storage[i][j] = init[i * 8 + j];
+                }
+            }
+        }
         Evm {
             pc: 0,
             stack: [[0u32; 8]; MAX_STACK],
@@ -93,7 +103,7 @@ impl<'a> Evm<'a> {
             ms: 0,
             code,
             calldata,
-            storage: [[0u32; 8]; STORAGE_SLOTS],
+            storage,
             stopped: false,
             reverted: false,
         }
@@ -348,14 +358,26 @@ impl<'a> Evm<'a> {
             SHA3 => {
                 let offset = self.pop();
                 let size = self.pop();
-                // In a real EVM this would be keccak256. For the demo we return
-                // a deterministic placeholder: offset ^ size as a U256.
                 let mut h = zero();
                 h[0] = offset[0] ^ size[0];
                 self.push(h);
             }
 
-            // Environment / calldata
+            // Environment opcodes
+            0x30 => { // ADDRESS — return self address
+                self.push(zero());
+            }
+            0x33 => { // CALLER — always return address 0x01 for our test sender
+                self.push([1u32, 0, 0, 0, 0, 0, 0, 0]);
+            }
+            0x34 => { // CALLVALUE
+                self.push(zero());
+            }
+            0x32 => { // ORIGIN
+                self.push([1u32, 0, 0, 0, 0, 0, 0, 0]);
+            }
+
+            // Calldata
             CALLDATALOAD => {
                 let offset_u = self.pop();
                 let offset = offset_u[0] as usize;
@@ -545,6 +567,23 @@ impl<'a> Evm<'a> {
         }
     }
 
+    fn write_final_storage(&self) {
+        // Write all STORAGE_SLOTS * 32 bytes after the return data.
+        // First we need to find where the return data ends.
+        let base = OUTPUT_ADDR as *const u8;
+        let ret_len = unsafe { (base as *const u32).read_volatile() } as usize;
+        let storage_out = unsafe { base.add(4 + ret_len) as *mut u32 };
+        for i in 0..STORAGE_SLOTS {
+            unsafe {
+                let off = i * 8;
+                let p = storage_out.add(off);
+                for j in 0..8 {
+                    *p.add(j) = self.storage[i][j];
+                }
+            }
+        }
+    }
+
     fn run(&mut self) -> i32 {
         let max_steps = 1_000_000;
         for _ in 0..max_steps {
@@ -597,11 +636,14 @@ pub extern "C" fn main() -> ! {
         core::ptr::write_bytes(bss_start as *mut u8, 0, len);
     }
 
-    // Read EVM bytecode + calldata from input region
-    let (code, calldata) = unsafe { read_input() };
+    // Read EVM bytecode + calldata + optional storage init from input region
+    let (code, calldata, storage_init) = unsafe { read_input() };
 
-    let mut evm = Evm::new(code, calldata);
+    let mut evm = Evm::new(code, calldata, storage_init);
     let exit_code = evm.run();
+
+    // Write final storage after return data
+    evm.write_final_storage();
 
     unsafe {
         core::arch::asm!("ecall", in("a7") 93, in("a0") exit_code);
@@ -609,15 +651,22 @@ pub extern "C" fn main() -> ! {
     loop {}
 }
 
-unsafe fn read_input<'a>() -> (&'a [u8], &'a [u8]) {
+unsafe fn read_input<'a>() -> (&'a [u8], &'a [u8], Option<&'a [u32; STORAGE_SLOTS * 8]>) {
     let ptr = INPUT_ADDR as *const u8;
     let code_len = (ptr as *const u32).read_volatile() as usize;
     let calldata_len = (ptr.add(4) as *const u32).read_volatile() as usize;
-    let code_start = ptr.add(8);
-    let calldata_start = ptr.add(8 + code_len);
+    let has_storage = (ptr.add(8) as *const u32).read_volatile();
+    let code_start = ptr.add(12);
+    let calldata_start = ptr.add(12 + code_len);
     let code = core::slice::from_raw_parts(code_start, code_len);
     let calldata = core::slice::from_raw_parts(calldata_start, calldata_len);
-    (code, calldata)
+    let storage_init = if has_storage != 0 {
+        let storage_ptr = calldata_start.add(calldata_len) as *const u32;
+        Some(&*(storage_ptr as *const [u32; STORAGE_SLOTS * 8]))
+    } else {
+        None
+    };
+    (code, calldata, storage_init)
 }
 
 // ── Signed arithmetic (two's complement on U256) ─────────────────

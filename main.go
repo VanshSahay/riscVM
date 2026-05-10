@@ -68,10 +68,13 @@ func runCmd(args []string) {
 // ── evm ──────────────────────────────────────────────────────────
 
 const evmInputAddr = 0x800000
+const storageSlots = 256
+const storageByteSize = storageSlots * 32
 
 func evmCmd(args []string) {
 	interpreter := "examples/evm.elf"
 	var calldataFile string
+	var storageFile string
 	trace := false
 	var positional []string
 
@@ -86,6 +89,11 @@ func evmCmd(args []string) {
 			i++
 			if i < len(args) {
 				calldataFile = args[i]
+			}
+		case "--storage", "-s":
+			i++
+			if i < len(args) {
+				storageFile = args[i]
 			}
 		case "--trace", "-t":
 			trace = true
@@ -105,7 +113,6 @@ func evmCmd(args []string) {
 		os.Exit(1)
 	}
 
-	// Strip 0x prefix if hex; otherwise treat as raw bytes
 	code = maybeHexDecode(code)
 
 	var calldata []byte
@@ -118,10 +125,28 @@ func evmCmd(args []string) {
 		calldata = maybeHexDecode(calldata)
 	}
 
-	runEVM(interpreter, code, calldata, trace)
+	var storageInit []byte
+	if storageFile != "" {
+		storageInit, err = os.ReadFile(storageFile)
+		if err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Failed to read storage: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	finalStorage, exitCode := runEVM(interpreter, code, calldata, storageInit, trace)
+
+	// Save storage if requested (before exit)
+	if storageFile != "" && len(finalStorage) == storageByteSize {
+		if err := os.WriteFile(storageFile, finalStorage, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to write storage: %v\n", err)
+		}
+	}
+
+	os.Exit(exitCode)
 }
 
-func runEVM(interpreterPath string, code, calldata []byte, trace bool) {
+func runEVM(interpreterPath string, code, calldata, storageInit []byte, trace bool) ([]byte, int) {
 	mem := vm.NewMemory(0)
 
 	// Load the EVM interpreter ELF
@@ -131,8 +156,10 @@ func runEVM(interpreterPath string, code, calldata []byte, trace bool) {
 		os.Exit(1)
 	}
 
-	// Write EVM input at 0x800000: [code_len: u32 LE][calldata_len: u32 LE][code...][calldata...]
-	writeEVMInput(mem, code, calldata)
+	// Write EVM input at 0x800000:
+	// [code_len: u32 LE][calldata_len: u32 LE][has_storage: u32 LE][code...][calldata...]
+	// [if has_storage: STORAGE_SLOTS*32 bytes storage data]
+	writeEVMInput(mem, code, calldata, storageInit)
 
 	cpu := vm.NewCPU(mem)
 	cpu.PC = entry
@@ -152,11 +179,12 @@ func runEVM(interpreterPath string, code, calldata []byte, trace bool) {
 		fmt.Fprintf(os.Stderr, "[trace] %d instructions executed\n", len(*cpu.Trace))
 	}
 
-	// Read return data
-	retLen, retData := readEVMReturn(mem)
+	// Read return data + final storage
+	retLen, retData, finalStorage := readEVMResult(mem)
+
+	// Print result but don't exit — let caller handle storage persistence
 	switch exitCode {
 	case 0:
-		fmt.Fprintf(os.Stderr, "EVM: STOP (success)\n")
 		if retLen > 0 {
 			fmt.Printf("%x\n", retData)
 		}
@@ -167,27 +195,39 @@ func runEVM(interpreterPath string, code, calldata []byte, trace bool) {
 		}
 	case 3:
 		fmt.Fprintf(os.Stderr, "EVM: ran out of steps\n")
-		os.Exit(1)
 	default:
 		fmt.Fprintf(os.Stderr, "EVM: exit code %d\n", exitCode)
 	}
-	os.Exit(exitCode)
+	return finalStorage, exitCode
 }
 
-func writeEVMInput(mem *vm.Memory, code, calldata []byte) {
+func writeEVMInput(mem *vm.Memory, code, calldata, storageInit []byte) {
 	const addr = evmInputAddr
 	binary.LittleEndian.PutUint32(mem.Data[addr:addr+4], uint32(len(code)))
 	binary.LittleEndian.PutUint32(mem.Data[addr+4:addr+8], uint32(len(calldata)))
-	copy(mem.Data[addr+8:], code)
-	copy(mem.Data[addr+8+len(code):], calldata)
+	hasStorage := uint32(0)
+	if len(storageInit) >= storageByteSize {
+		hasStorage = 1
+	}
+	binary.LittleEndian.PutUint32(mem.Data[addr+8:addr+12], hasStorage)
+	copy(mem.Data[addr+12:], code)
+	copy(mem.Data[addr+12+len(code):], calldata)
+	if hasStorage == 1 {
+		copy(mem.Data[addr+12+len(code)+len(calldata):], storageInit[:storageByteSize])
+	}
 }
 
-func readEVMReturn(mem *vm.Memory) (int, []byte) {
+func readEVMResult(mem *vm.Memory) (int, []byte, []byte) {
 	const addr = evmInputAddr
-	length := binary.LittleEndian.Uint32(mem.Data[addr : addr+4])
+	length := int(binary.LittleEndian.Uint32(mem.Data[addr : addr+4]))
 	data := make([]byte, length)
 	copy(data, mem.Data[addr+4:addr+4+length])
-	return int(length), data
+
+	// Final storage is STORAGE_SLOTS*32 bytes after the return data
+	storageOff := addr + 4 + length
+	storage := make([]byte, storageByteSize)
+	copy(storage, mem.Data[storageOff:storageOff+storageByteSize])
+	return length, data, storage
 }
 
 func maybeHexDecode(b []byte) []byte {
