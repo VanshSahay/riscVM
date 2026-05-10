@@ -144,3 +144,97 @@ func TestFence(t *testing.T) {
 	w := GenerateWitness(cur, 48, next) // PC + 4
 	assert.ProverSucceeded(&circuit, &w, test.WithCurves(ecc.BN254))
 }
+
+// TestLw proves LW x5, 0(x1) with x1=0x1000, MemVal=42 → x5=42, PC+=4.
+func TestLw(t *testing.T) {
+	assert := test.NewAssert(t)
+	var circuit StepCircuit
+
+	// LW x5, 0(x1) = 0x0000a283
+	cur := vm.TraceStep{
+		PC:       100,
+		Instr:    0x0000a283,
+		MemAddr:  0x1000,
+		MemVal:   42,
+		MemOp:    1, // read
+	}
+	cur.Regs[1] = 0x1000
+
+	var next [32]uint32
+	next = cur.Regs
+	next[5] = 42
+
+	w := GenerateWitness(cur, 104, next)
+	assert.ProverSucceeded(&circuit, &w, test.WithCurves(ecc.BN254))
+}
+
+// TestSw proves SW x2, 0(x1) with x1=0x1000, x2=99 → MemVal=99, PC+=4.
+func TestSw(t *testing.T) {
+	assert := test.NewAssert(t)
+	var circuit StepCircuit
+
+	// SW x2, 0(x1) = 0x0020a023
+	cur := vm.TraceStep{
+		PC:       200,
+		Instr:    0x0020a023,
+		MemAddr:  0x1000,
+		MemVal:   99,
+		MemOp:    2, // write
+	}
+	cur.Regs[1] = 0x1000
+	cur.Regs[2] = 99
+
+	var next [32]uint32
+	next = cur.Regs // no register changes for store
+
+	w := GenerateWitness(cur, 204, next)
+	assert.ProverSucceeded(&circuit, &w, test.WithCurves(ecc.BN254))
+}
+
+// TestEcall proves ECALL advances PC by 4 and leaves registers unchanged.
+func TestEcall(t *testing.T) {
+	assert := test.NewAssert(t)
+	var circuit StepCircuit
+
+	// ECALL = 0x00000073
+	cur := vm.TraceStep{PC: 300, Instr: 0x00000073}
+	cur.Regs[10] = 5
+	cur.Regs[17] = 64
+
+	var next [32]uint32
+	next = cur.Regs
+
+	w := GenerateWitness(cur, 304, next)
+	assert.ProverSucceeded(&circuit, &w, test.WithCurves(ecc.BN254))
+}
+
+// TestEbreak proves EBREAK advances PC by 4 and leaves registers unchanged.
+func TestEbreak(t *testing.T) {
+	assert := test.NewAssert(t)
+	var circuit StepCircuit
+
+	// EBREAK = 0x00100073
+	cur := vm.TraceStep{PC: 400, Instr: 0x00100073}
+
+	var next [32]uint32
+	next = cur.Regs
+
+	w := GenerateWitness(cur, 404, next)
+	assert.ProverSucceeded(&circuit, &w, test.WithCurves(ecc.BN254))
+}
+
+// TestCsrrw proves CSRRW as a no-op (PC+=4, registers unchanged).
+func TestCsrrw(t *testing.T) {
+	assert := test.NewAssert(t)
+	var circuit StepCircuit
+
+	// CSRRW x5, cycle, x0 = 0xc00022f3 (funct3=1, funct12=0xc00)
+	cur := vm.TraceStep{PC: 500, Instr: 0xc00022f3}
+	cur.Regs[5] = 7
+
+	var next [32]uint32
+	next = cur.Regs // no change — CSR treated as no-op
+
+	w := GenerateWitness(cur, 504, next)
+	assert.ProverSucceeded(&circuit, &w, test.WithCurves(ecc.BN254))
+}

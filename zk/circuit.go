@@ -23,6 +23,12 @@ type StepCircuit struct {
 	Opcode frontend.Variable
 	Funct3 frontend.Variable
 	Funct7 frontend.Variable
+
+	// Memory access witness
+	MemAddr frontend.Variable // effective address for load/store
+	MemVal  frontend.Variable // value read (load) or written (store)
+
+	Funct12 frontend.Variable // bits[31:20] for system instructions (ECALL/EBREAK/CSR)
 }
 
 func (c *StepCircuit) Define(api frontend.API) error {
@@ -38,6 +44,8 @@ func (c *StepCircuit) Define(api frontend.API) error {
 	api.AssertIsEqual(c.Rs1, bitsToVal(api, bits[15:20]))
 	api.AssertIsEqual(c.Rs2, bitsToVal(api, bits[20:25]))
 	api.AssertIsEqual(c.Funct7, bitsToVal(api, bits[25:32]))
+	funct12Bits := bits[20:32]
+	api.AssertIsEqual(c.Funct12, bitsToVal(api, funct12Bits))
 
 	// 3. Constrain Imm from instruction bits per format.
 	//
@@ -59,6 +67,7 @@ func (c *StepCircuit) Define(api frontend.API) error {
 	isJalr := api.IsZero(api.Sub(c.Opcode, 0x67))  // I-type
 	isBranch := api.IsZero(api.Sub(c.Opcode, 0x63))
 	isFence := api.IsZero(api.Sub(c.Opcode, 0x0F)) // FENCE / FENCE.I (no-op)
+	isSystem := api.IsZero(api.Sub(c.Opcode, 0x73)) // ECALL/EBREAK/CSR
 
 	// I-type immediate: sign-extended bits[31:20]
 	// Raw 12-bit value; sign bit is bits[31].
@@ -264,6 +273,7 @@ func (c *StepCircuit) Define(api frontend.API) error {
 		api.Mul(isLui, resLui),
 		api.Mul(isAuipc, resAuipc),
 		api.Mul(api.Add(isJal, isJalr), api.Add(c.PCBefore, 4)),
+		api.Mul(isLoad, c.MemVal),
 	)
 
 	// 7. Constrain RegsAfter
@@ -272,13 +282,23 @@ func (c *StepCircuit) Define(api frontend.API) error {
 			continue
 		}
 		isRd := api.IsZero(api.Sub(c.Rd, i))
-		// Stores, branches, and fences don't write to Rd
-		writesRd := api.Sub(1, api.Add(isStore, isBranch, isFence))
+		// Stores, branches, fences, and system instructions don't write to Rd
+		writesRd := api.Sub(1, api.Add(isStore, isBranch, isFence, isSystem))
 		expected := api.Select(api.Mul(isRd, writesRd), targetVal, c.RegsBefore[i])
 		api.AssertIsEqual(c.RegsAfter[i], expected)
 	}
 
-	// 8. Control Flow (PCAfter)
+	// 8. Memory constraints
+	//
+	// Effective address: RegsBefore[Rs1] + Imm
+	effAddr := api.Add(val1, c.Imm)
+	isMem := api.Add(isLoad, isStore)
+	// When this is a load or store, MemAddr must match the computed effective address
+	api.AssertIsEqual(api.Mul(isMem, c.MemAddr), api.Mul(isMem, effAddr))
+	// When this is a store, MemVal must match the value in Rs2
+	api.AssertIsEqual(api.Mul(isStore, c.MemVal), api.Mul(isStore, val2))
+
+	// 9. Control Flow (PCAfter)
 	isBeq := api.Mul(isBranch, isF3_0)
 	isBne := api.Mul(isBranch, isF3_1)
 	isBlt := api.Mul(isBranch, isF3_4)

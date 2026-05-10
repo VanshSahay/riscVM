@@ -49,6 +49,7 @@ func GenerateWitness(current vm.TraceStep, nextPC uint32, nextRegs [32]uint32) S
 	w.Rs1 = frontend.Variable((instr >> 15) & 0x1F)
 	w.Rs2 = frontend.Variable((instr >> 20) & 0x1F)
 	w.Funct7 = frontend.Variable((instr >> 25) & 0x7F)
+	w.Funct12 = frontend.Variable((instr >> 20) & 0xFFF)
 
 	w.Imm = frontend.Variable(0)
 
@@ -69,6 +70,10 @@ func GenerateWitness(current vm.TraceStep, nextPC uint32, nextRegs [32]uint32) S
 		imm := vm.DecodeJImm(instr)
 		w.Imm = frontend.Variable(uint32(imm))
 	}
+
+	// Memory access witness
+	w.MemAddr = frontend.Variable(current.MemAddr)
+	w.MemVal = frontend.Variable(current.MemVal)
 
 	return w
 }
