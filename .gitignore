@@ -1,2 +1,3 @@
 riscvm
 web/riscvm.wasm
+evm/target/

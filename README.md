@@ -178,7 +178,13 @@ In this repo, the gnark `test` harness runs the full prove/verify cycle automati
 
 ```
 riscVM/
-├── main.go              CLI entry point
+├── main.go              CLI entry point (run + evm subcommands)
+├── evm/
+│   ├── src/
+│   │   ├── main.rs      EVM interpreter (no_std Rust for RISC-V)
+│   │   └── u256.rs      256-bit arithmetic
+│   ├── link.ld          RISC-V linker script
+│   └── Cargo.toml
 ├── vm/
 │   ├── cpu.go           CPU state, Step loop, run loop, syscalls
 │   ├── decode.go        Instruction decoder + immediate extractors
@@ -218,7 +224,13 @@ riscVM/
 go build -o riscvm .
 
 # Run a RISC-V ELF binary
-./riscvm examples/complexity.elf
+./riscvm run examples/complexity.elf
+
+# Build the EVM interpreter
+./build_evm.sh
+
+# Run EVM bytecode
+./riscvm evm examples/fact.evm -c examples/fact_calldata.bin
 ```
 
 ### Web Dashboard
@@ -265,6 +277,26 @@ The ZK test suite (`zk/zk_test.go`) exercises the full gnark prove/verify pipeli
 All cases are checked under the BN254 curve. If you supply a wrong witness (e.g. lie about the result), gnark rejects it.
 
 The integration test (`zk/integration_test.go`) runs a complete 7-step RISC-V program — ALU ops, a store, a load, and a taken branch that skips an instruction — through the VM with tracing enabled, then proves every step end-to-end.
+
+---
+
+## Proving EVM Bytecode
+
+The zkVM proves EVM execution by running an EVM interpreter *as a RISC-V program* — the same approach production zkVMs like SP1 and Risc Zero use. The interpreter (`evm/`) is written in `no_std` Rust targeting RV32I, compiled to a RISC-V ELF, and loaded into the zkVM.
+
+```
+EVM bytecode ──▶ EVM interpreter (RISC-V ELF) ──▶ zkVM proves RISC-V trace
+```
+
+The interpreter supports ~50 EVM opcodes: arithmetic (ADD, MUL, SUB, DIV, EXP, MOD...), bitwise ops (AND, OR, XOR, NOT, SHL, SHR, SAR), comparisons (LT, GT, EQ, ISZERO), stack manipulation (POP, DUP1–16, SWAP1–16, PUSH1–32), memory (MLOAD, MSTORE, MSTORE8), storage (SLOAD, SSTORE), control flow (JUMP, JUMPI, JUMPDEST), calldata (CALLDATALOAD, CALLDATASIZE, CALLDATACOPY), and RETURN/REVERT. All values are full 256-bit (8 × u32 limbs).
+
+At runtime the zkVM:
+1. Loads the interpreter ELF and the target EVM bytecode
+2. Places the bytecode + calldata in VM memory at a known address (0x800000)
+3. Runs the interpreter, which reads the bytecode, executes it, and writes return data back
+4. Each RISC-V instruction of the interpreter is cryptographically proven by the circuit
+
+The integration test (`zk/integration_test.go`) already verifies that the zkVM can prove complete programs end-to-end — proving EVM execution is a direct application of that capability at a larger scale.
 
 ---
 
