@@ -108,11 +108,17 @@
         diffsHtml = '<div class="cert-row muted">No state changes</div>';
       }
 
+      const memRow = w.memAddr
+        ? '<div class="cert-section-title">Memory Access</div>' +
+          '<div class="cert-row"><span>' + w.memOp + '</span><span>' + w.memAddr + ' = ' + w.memVal + '</span></div>'
+        : '';
+
       witnessViewEl.innerHTML = `
         <div class="proof-cert">
           <div class="cert-header">Proof Certificate</div>
           <div class="cert-row"><span>Instr</span> <span>${w.instr} (${w.asm})</span></div>
           <div class="cert-row"><span>PC</span> <span>${w.pcBefore} → ${w.pcAfter}</span></div>
+          ${memRow}
           <div class="cert-section-title">State Changes</div>
           ${diffsHtml}
         </div>

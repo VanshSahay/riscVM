@@ -54,7 +54,7 @@ func verifyLastStep(this js.Value, args []js.Value) interface{} {
 		}
 	}
 
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"ok": ok,
 		"witness": map[string]interface{}{
 			"pcBefore": fmt.Sprintf("0x%08x", currentStep.PC),
@@ -64,6 +64,13 @@ func verifyLastStep(this js.Value, args []js.Value) interface{} {
 			"diffs":    diffs,
 		},
 	}
+	if currentStep.MemOp != 0 {
+		w := result["witness"].(map[string]interface{})
+		w["memAddr"] = fmt.Sprintf("0x%08x", currentStep.MemAddr)
+		w["memVal"] = fmt.Sprintf("0x%08x", currentStep.MemVal)
+		w["memOp"] = map[int]string{1: "read", 2: "write"}[currentStep.MemOp]
+	}
+	return result
 }
 
 func getExited(this js.Value, args []js.Value) interface{} {
