@@ -78,67 +78,19 @@ Key files:
 
 ## Layer 2: Arithmetization (`zk/circuit.go`)
 
-This is where the magic happens, and also where most zkVM tutorials lose people. Let's go slow.
+The circuit proves that one RISC-V instruction executed correctly. It works over the BN254 finite field and compiles to a Rank-1 Constraint System (R1CS) via [gnark](https://github.com/ConsenSys/gnark).
 
-### What is a "constraint"?
+For each instruction, the circuit enforces five things:
 
-A constraint is just an equation that must hold. For example:
+1. **Instruction decoding** — opcode, rd, rs1, rs2, funct3, funct7 all match the raw 32-bit instruction word.
+2. **Immediate reconstruction** — the Imm field matches the instruction bits for the active format (I/S/B/J/U-type).
+3. **Register result** — the ALU output is correct for the decoded opcode (e.g. ADD, SUB, shift, comparison).
+4. **Register write** — only `RegsAfter[rd]` changes; all other registers stay the same.
+5. **PC transition** — PC advances by 4, a branch offset, or a jump target depending on the opcode.
 
-```
-result = left + right
-```
+The circuit is static (no branches) — it computes every possible result and multiplexes the correct one using one-hot selectors (`IsAdd`, `IsSub`, etc.). Only one selector is 1, so only one term contributes to the output.
 
-If you can show that all your constraints are satisfied, you've proven the computation is correct.
-
-The ZK proof system works over a **finite field** (in this project, BN254). Every value — register contents, PC, instruction bits — is treated as a number in this field. Constraints become polynomial equations.
-
-### What is R1CS?
-
-This project uses **Rank-1 Constraint Systems (R1CS)** via the [gnark](https://github.com/ConsenSys/gnark) library. An R1CS constraint looks like:
-
-```
-(a · x) * (b · y) = (c · z)
-```
-
-The clever part: you can express any computation as a collection of these. Addition is free; multiplication costs one constraint.
-
-### How one RISC-V step becomes constraints
-
-For each instruction step, the circuit (`zk/circuit.go`) must prove:
-
-1. **Instruction decoding is correct** — the opcode, rd, rs1, rs2, funct3, funct7 fields all match the raw 32-bit instruction word (enforced by bit decomposition constraints).
-
-2. **The immediate value is honest** — the Imm field is reconstructed inside the circuit from the raw Instr bits according to the instruction format (I/S/B/J/U-type). A prover cannot supply a fake Imm and have the circuit accept it.
-
-3. **The register result is correct** — for an ADD instruction, `RegsAfter[rd] == RegsBefore[rs1] + RegsBefore[rs2]`. For a shift, the barrel-shifter constraints fire. For a comparison, a 33-bit subtraction captures the borrow/sign bit.
-
-4. **The right register was written** — a multiplexer checks that only `RegsAfter[rd]` changed; all other registers must equal their before values.
-
-5. **The PC advanced correctly** — whether by 4 (sequential), by a branch offset (if the branch condition holds), or to a jump target.
-
-Here is what a single ADD step looks like as a constraint, conceptually:
-
-```
-RegsBefore[rs1] + RegsBefore[rs2] == RegsAfter[rd]   (if opcode is ADD)
-RegsAfter[i] == RegsBefore[i]                         (for all i ≠ rd)
-PCAfter == PCBefore + 4                               (no branch)
-```
-
-The circuit enforcese all of these simultaneously for every possible instruction, using boolean selectors (`IsAdd`, `IsSub`, `isBranch`, etc.) multiplied against the relevant result.
-
-### Key concept: one circuit, all instructions
-
-The circuit doesn't branch for different opcodes — it **computes all possible outcomes** and then selects the right one using multiplexers. This is required because ZK circuits are static; they have no "if/else" at the circuit level, only linear combinations and products.
-
-```
-targetVal = IsAdd * resAdd
-          + IsSub * resSub  
-          + IsAnd * resAnd
-          + IsAddi * resAddi
-          + ...
-```
-
-Because exactly one selector is 1 and the rest are 0, only one term survives.
+For a detailed walkthrough, see `zk/README.md`.
 
 ---
 
@@ -179,6 +131,8 @@ In this repo, the gnark `test` harness runs the full prove/verify cycle automati
 ```
 riscVM/
 ├── main.go              CLI entry point (run + evm subcommands)
+├── build_evm.sh         Build script for the EVM interpreter
+├── evm_asm.py           EVM bytecode assembler
 ├── evm/
 │   ├── src/
 │   │   ├── main.rs      EVM interpreter (no_std Rust for RISC-V)
@@ -193,12 +147,11 @@ riscVM/
 │   ├── trace.go         Execution trace (per-step snapshots)
 │   ├── format.go        Disassembler (for UI labels)
 │   ├── elf.go           ELF32 loader
-│   └── cpu_test.go      33 VM instruction-level unit tests
+│   └── cpu_test.go      VM instruction-level unit tests
 ├── zk/
 │   ├── circuit.go       gnark R1CS circuit — the heart of the zkVM
 │   ├── prover.go        Witness generator + cached Groth16 prove/verify
-│   ├── zk_test.go       11 single-step prove/verify tests (ADD, SUB, ADDI,
-│   │                     BEQ, LUI, JALR, FENCE, LW, SW, ECALL, EBREAK, CSRRW)
+│   ├── zk_test.go       Per-instruction prove/verify tests
 │   └── integration_test.go  Full-program proof: 7-step program with ALU,
 │                         load, store, and branch, proved end-to-end
 ├── cmd/wasm/
@@ -208,9 +161,11 @@ riscVM/
 │   ├── main.js          UI: register grid, memory window, proof panel
 │   └── style.css
 └── examples/
-    ├── hello.s          Hello world
-    ├── fact.s           Factorial
-    └── complexity.elf   Pre-compiled demo binary
+    ├── hello.s / hello.elf        Hello world
+    ├── fact.s / fact.elf          Factorial
+    ├── complexity.s / complexity.elf  Fibonacci demo
+    ├── evm.elf                    EVM interpreter RISC-V binary
+    └── erc20.evm                  ERC20 contract (assembly)
 ```
 
 ---
@@ -231,6 +186,10 @@ go build -o riscvm .
 
 # Run EVM bytecode
 ./riscvm evm examples/fact.evm -c examples/fact_calldata.bin
+
+# Chain EVM calls with persistent storage
+./riscvm evm examples/erc20.bin -c mint.calldata -s /tmp/erc20.state
+./riscvm evm examples/erc20.bin -c transfer.calldata -s /tmp/erc20.state
 ```
 
 ### Web Dashboard
@@ -259,24 +218,6 @@ go test ./...
 
 ---
 
-## What the tests prove
-
-The ZK test suite (`zk/zk_test.go`) exercises the full gnark prove/verify pipeline:
-
-- **ADD x3, x1, x2** with `x1=10, x2=20` → expects `x3=30, PC+=4`
-- **SUB x4, x3, x1** with `x3=30, x1=10` → expects `x4=20, PC+=4`
-- **ADDI x5, x1, 5** with `x1=10` → expects `x5=15, PC+=4`
-- **BEQ x1, x2, +8** — tested for both taken (`x1==x2`, PC jumps) and not-taken (`x1!=x2`, PC advances normally)
-- **LUI x6, 0x12345** → expects `x6=0x12345000, PC+=4`
-- **JALR x7, x1, 4** with `x1=100` → expects `x7=PC+4, PCAfter=104`
-- **FENCE** — treated as a no-op; all registers unchanged, PC advances by 4
-- **LW / SW** — load constrains `MemVal → rd` and effective address `rs1 + imm`; store constrains `MemVal == rs2` and effective address
-- **ECALL / EBREAK** — treated as no-ops; registers unchanged, PC advances by 4
-- **CSRRW** — CSR instructions treated as no-ops (register state unchanged)
-
-All cases are checked under the BN254 curve. If you supply a wrong witness (e.g. lie about the result), gnark rejects it.
-
-The integration test (`zk/integration_test.go`) runs a complete 7-step RISC-V program — ALU ops, a store, a load, and a taken branch that skips an instruction — through the VM with tracing enabled, then proves every step end-to-end.
 
 ---
 
@@ -306,10 +247,10 @@ Here are concrete next steps, roughly in order of difficulty:
 
 ### Intermediate
 
-**4. Memory permutation argument**
+**1. Memory permutation argument**
 The circuit now constrains individual load and store semantics (effective address, store value = rs2, load value written to rd). But it does not prove that a load returns the same value that a prior store wrote to that address. The standard technique is a **memory permutation argument**: sort all (address, timestamp, value) memory access tuples and prove with a grand-product check that no value was forged. This is what PLOOKUP, Halo2's lookup tables, and similar systems are designed for.
 
-**5. Recursive proof aggregation**
+\*\*2\. Recursive proof aggregation**
 Instead of proving N steps separately (as the integration test does now), use gnark's `std/recursion` package to recursively aggregate them: prove that a Groth16 proof is valid inside another Groth16 circuit. This compresses N proofs into 1 constant-size proof regardless of program length.
 
 **6. Compressed witness representation**
@@ -334,5 +275,5 @@ Programs longer than ~100k steps become impractical to prove in one shot (memory
 - [RISC-V ISA Specification](https://github.com/riscv/riscv-isa-manual) — the official ISA manual
 - [From AIRs to RAPs](https://eprint.iacr.org/2023/1082) — how execution traces become polynomial constraints
 - [Groth16 paper](https://eprint.iacr.org/2016/260) — the proof system behind Groth16
-- [Risc Zero whitepaper](https://www.risczero.com/whitepaper.pdf) — a production zkVM using RISC-V
-- [SP1 book](https://succinctlabs.github.io/sp1/) — another RISC-V zkVM, heavily optimized
+- [Risc Zero](https://dev.risczero.com/) — a production zkVM using RISC-V
+- [SP1](https://docs.succinct.xyz/) — another RISC-V zkVM, heavily optimized
