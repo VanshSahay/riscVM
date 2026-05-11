@@ -249,22 +249,49 @@
     return result.join('');
   }
 
-  function tryCompileSol(source, contractName, funcName, args) {
-    // Try the solc WASM compiler. Handles multiple API patterns.
-    let compileFn = null;
+  function findSolc() {
+    // solc can attach to different globals depending on the build.
+    const mod = typeof Module !== 'undefined' ? Module
+              : (typeof self !== 'undefined' && self.Module) ? self.Module
+              : null;
+    if (!mod) return null;
 
-    // Pattern 1: Module._compileStandard (soljson-*.js recent builds)
-    if (typeof Module !== 'undefined' && typeof Module._compileStandard === 'function') {
-      compileFn = function (input) {
-        const out = Module._compileStandard(JSON.stringify(input));
+    // Emscripten cwrap (preferred — handles string marshaling).
+    if (typeof mod.cwrap === 'function') {
+      try {
+        const compile = mod.cwrap('compileStandard', 'string', ['string', 'number']);
+        return function (input) { return JSON.parse(compile(JSON.stringify(input))); };
+      } catch (_) {}
+    }
+
+    // Direct JS-callable wrapper (some older builds).
+    if (typeof mod._compileStandard === 'function') {
+      return function (input) {
+        const out = mod._compileStandard(JSON.stringify(input));
         return JSON.parse(out);
       };
     }
-    // Pattern 2: Module.compile (older solc-js wrapper)
-    if (!compileFn && typeof Module !== 'undefined' && typeof Module.compile === 'function') {
-      compileFn = Module.compile;
+
+    // Number/C-pointer (needs manual string marshaling).
+    if (typeof mod._compileStandard === 'number' && typeof mod._malloc === 'function') {
+      return function (input) {
+        const json = JSON.stringify(input);
+        const ptr = mod._malloc(json.length + 1);
+        mod.stringToUTF8(json, ptr, json.length + 1);
+        const outPtr = mod._compileStandard(ptr, 0);
+        const out = mod.UTF8ToString(outPtr);
+        mod._free(ptr);
+        return JSON.parse(out);
+      };
     }
-    // Pattern 3: Global solc object (npm solc package)
+
+    return null;
+  }
+
+  function tryCompileSol(source, contractName, funcName, args) {
+    let compileFn = findSolc();
+
+    // npm solc package
     if (!compileFn && typeof solc !== 'undefined' && typeof solc.compile === 'function') {
       compileFn = function (input) { return JSON.parse(solc.compile(JSON.stringify(input))); };
     }
@@ -410,7 +437,6 @@
       bytecode = result.bytecode;
       selector = result.selector;
     } catch (e) {
-      console.warn('solc compilation skipped, using simple compiler:', e.message);
       if (paramTypes.length === 0) {
         solStatus.textContent = 'Specify param types: e.g. add(uint256,uint256)';
         solStatus.className = 'sol-status error';
