@@ -46,11 +46,37 @@
   <div class="overlay" id="overlay" hidden>
     <div class="modal">
       <h2>Load program</h2>
-      <p class="hint">Paste ELF binary as base64, or raw bytes as hex (e.g. <code>93 00 10 00</code> or <code>0x00100093</code>). Assemble with <code>riscv32-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -o prog.elf prog.s</code> then <code>base64 -i prog.elf</code> (macOS) or <code>base64 &lt; prog.elf</code>.</p>
-      <textarea id="pasteInput" placeholder="Paste base64 ELF or hex bytes…" rows="8"></textarea>
-      <div class="modal-actions">
-        <button type="button" class="btn" id="btnLoadElf">Load as ELF (base64)</button>
-        <button type="button" class="btn" id="btnLoadHex">Load as hex</button>
+      <div class="modal-tabs" id="modalTabs">
+        <button type="button" class="tab active" data-tab="elf">ELF / Hex</button>
+        <button type="button" class="tab" data-tab="solidity">Solidity</button>
+      </div>
+
+      <!-- ELF / Hex tab -->
+      <div class="tab-panel active" id="tabElf">
+        <p class="hint">Paste ELF binary as base64, or raw bytes as hex (e.g. <code>93 00 10 00</code> or <code>0x00100093</code>). Assemble with <code>riscv32-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -o prog.elf prog.s</code> then <code>base64 -i prog.elf</code> (macOS) or <code>base64 &lt; prog.elf</code>.</p>
+        <textarea id="pasteInput" placeholder="Paste base64 ELF or hex bytes…" rows="8"></textarea>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="btnLoadElf">Load as ELF (base64)</button>
+          <button type="button" class="btn" id="btnLoadHex">Load as hex</button>
+        </div>
+      </div>
+
+      <!-- Solidity tab -->
+      <div class="tab-panel" id="tabSolidity">
+        <p class="hint">Paste Solidity source. The contract is compiled with solc in your browser, then the EVM bytecode is proved by the zkVM. Simple contracts (pure functions, basic storage) work best.</p>
+        <textarea id="solSource" placeholder="contract Foo {&#10;  function add(uint a, uint b) public pure returns (uint) {&#10;    return a + b;&#10;  }&#10;}" rows="10"></textarea>
+        <div class="sol-form">
+          <label>Contract <input type="text" id="solContract" placeholder="Foo" /></label>
+          <label>Function <input type="text" id="solFunction" placeholder="add(uint256,uint256)" /></label>
+          <label>Args <input type="text" id="solArgs" placeholder="3, 5" /></label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="btnLoadSol">Compile &amp; Load</button>
+        </div>
+        <div class="sol-status" id="solStatus"></div>
+      </div>
+
+      <div class="modal-actions" style="margin-top:0.85rem">
         <button type="button" class="btn btn-ghost" id="btnCloseModal">Cancel</button>
       </div>
       <div class="error" id="loadError"></div>
@@ -62,6 +88,7 @@
     <span class="status" id="status">Load a program to start.</span>
   </div>
   <script src="wasm_exec.js"></script>
+  <script src="https://binaries.soliditylang.org/wasm/soljson-v0.8.25+commit.b61c2a91.js"></script>
   <script src="main.js"></script>
 </body>
 </html>
