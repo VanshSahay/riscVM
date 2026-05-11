@@ -47,15 +47,7 @@ func (c *StepCircuit) Define(api frontend.API) error {
 	funct12Bits := bits[20:32]
 	api.AssertIsEqual(c.Funct12, bitsToVal(api, funct12Bits))
 
-	// 3. Constrain Imm from instruction bits per format.
-	//
-	// Each format reconstructs its immediate from the bits of Instr and asserts
-	// equality with c.Imm.  Only one format's selector is 1 at a time, so we
-	// compute all candidates and do a multiplexed assertion:
-	//   constrainedImm = sum_over_formats(selector * candidate)
-	// then assert constrainedImm == c.Imm.
-	//
-	// Formats covered: I, S, B, J, U.  R-type has no immediate (Imm must be 0).
+	// 3. Imm must match the instruction-word bitfields for the active format.
 
 	isOp := api.IsZero(api.Sub(c.Opcode, 0x33))    // R-type
 	isOpImm := api.IsZero(api.Sub(c.Opcode, 0x13)) // I-type arith
@@ -69,19 +61,17 @@ func (c *StepCircuit) Define(api frontend.API) error {
 	isFence := api.IsZero(api.Sub(c.Opcode, 0x0F)) // FENCE / FENCE.I (no-op)
 	isSystem := api.IsZero(api.Sub(c.Opcode, 0x73)) // ECALL/EBREAK/CSR
 
-	// I-type immediate: sign-extended bits[31:20]
-	// Raw 12-bit value; sign bit is bits[31].
+	// I-type: sign-extended bits[31:20]
 	iImmBits := make([]frontend.Variable, 32)
 	for i := 0; i < 11; i++ {
 		iImmBits[i] = bits[i+20]
 	}
-	// Sign-extend: replicate bits[31] for positions 11..31
 	for i := 11; i < 32; i++ {
 		iImmBits[i] = bits[31]
 	}
 	iImm := bitsToVal(api, iImmBits)
 
-	// S-type immediate: {bits[31:25], bits[11:7]}, sign-extended
+	// S-type: {bits[31:25], bits[11:7]}
 	sImmBits := make([]frontend.Variable, 32)
 	for i := 0; i < 5; i++ {
 		sImmBits[i] = bits[i+7]
@@ -215,24 +205,16 @@ func (c *StepCircuit) Define(api frontend.API) error {
 	resSra := shiftRight(api, bits1, shamtBits2[:5], true)
 	resSrai := shiftRight(api, bits1, shamtBitsImm[:5], true)
 
-	// SLT / SLTU: comparison using 33-bit arithmetic.
-	//
-	// To keep values in range for ToBinary, we add 2^32 before subtracting so
-	// the result is always non-negative in the field (val1, val2 are 32-bit bounded
-	// because they came through ToBinary(32) above).
-	// Bit 32 of (2^32 + val1 - val2) is 1 iff val1 < val2 unsigned.
-	// For signed SLT we reinterpret the 32-bit values as signed by subtracting
-	// 2^31 from both before the unsigned comparison.
+	// SLT / SLTU via 33-bit subtraction: bit 32 of (2^32 + val1 - val2)
+	// gives the borrow — 1 iff val1 < val2 unsigned. Signed comparison
+	// subtracts 2^31 from both operands first.
 	two32 := frontend.Variable(uint64(1) << 32)
 	two31 := frontend.Variable(uint64(1) << 31)
 
-	// Unsigned: bit32 of (2^32 + val1 - val2) == 1 iff val1 <u val2
 	diffU := api.Add(two32, api.Sub(val1, val2))
 	diffUBits := api.ToBinary(diffU, 33)
-	resSltu := api.Sub(1, diffUBits[32]) // borrow: 0 means val1 >= val2, 1 means val1 < val2
-	// When val1 < val2 unsigned: 2^32 + val1 - val2 < 2^32, so bit32 == 0 → resSltu = 1. ✓
+	resSltu := api.Sub(1, diffUBits[32])
 
-	// Signed: shift both operands by -2^31 to turn signed comparison into unsigned
 	signedVal1 := api.Sub(val1, two31)
 	signedVal2 := api.Sub(val2, two31)
 	diffS := api.Add(two32, api.Sub(signedVal1, signedVal2))

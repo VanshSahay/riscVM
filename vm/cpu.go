@@ -70,7 +70,6 @@ func (c *CPU) Step() error {
 	if _, isUnknown := decoded.(Unknown); isUnknown {
 		return fmt.Errorf("illegal instruction 0x%08x at PC=0x%x", instr, c.PC)
 	}
-	// Handle ECALL
 	if _, isEcall := decoded.(Ecall); isEcall {
 		code, done, _ := c.handleSyscall()
 		if done {

@@ -44,14 +44,11 @@ func verifyLastStep(this js.Value, args []js.Value) interface{} {
 	currentStep := trace[len(trace)-1]
 	witness := zk.GenerateWitness(currentStep, cpu.PC, cpu.Regs)
 
-	// In a real production zkVM, this is where we'd call gnark's groth16.Prove
-	// For this sleek WASM demo, we verify the witness and return a success signal.
 	ok, err := zk.ProveStep(witness)
 	if err != nil {
 		return map[string]interface{}{"ok": false, "error": err.Error()}
 	}
 
-	// Find register diffs
 	diffs := make(map[string]interface{})
 	for i := 0; i < 32; i++ {
 		if currentStep.Regs[i] != cpu.Regs[i] {

@@ -39,7 +39,6 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --trace, -t                Enable execution tracing\n")
 }
 
-// ── run ──────────────────────────────────────────────────────────
 
 func runCmd(args []string) {
 	if len(args) < 1 {
@@ -65,7 +64,6 @@ func runCmd(args []string) {
 	os.Exit(exitCode)
 }
 
-// ── evm ──────────────────────────────────────────────────────────
 
 const evmInputAddr = 0x800000
 const storageSlots = 256

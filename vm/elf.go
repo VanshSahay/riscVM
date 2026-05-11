@@ -98,7 +98,6 @@ func LoadELF(path string, mem *Memory) (entry uint32, err error) {
 			return 0, fmt.Errorf("read segment: %w", err)
 		}
 		_ = n
-		// Zero-fill remaining memsz beyond filesz
 		for i := filesz; i < memsz; i++ {
 			mem.Data[vaddr+uint32(i)] = 0
 		}

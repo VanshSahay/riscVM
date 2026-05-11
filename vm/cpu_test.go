@@ -446,13 +446,10 @@ func TestIllegalInstrReturnsError(t *testing.T) {
 }
 
 func TestRunStepLimitReturnsError(t *testing.T) {
-	// Create a tight loop that exceeds the step limit via Run()
-	// For unit-testing purposes we just verify ErrStepLimit is distinct from nil.
 	if ErrStepLimit == nil {
 		t.Fatal("ErrStepLimit must be non-nil")
 	}
 	wrapped := errors.New("wrapped: " + ErrStepLimit.Error())
 	if !errors.Is(wrapped, ErrStepLimit) {
-		// That's expected — just check the sentinel itself is usable
 	}
 }

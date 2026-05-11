@@ -5,7 +5,6 @@ mod u256;
 
 use u256::*;
 
-// ── Memory layout ────────────────────────────────────────────────
 // zkVM copies EVM bytecode + calldata + optional storage init to 0x800000:
 //   [u32 LE: code_len][u32 LE: calldata_len][u32 LE: has_storage_init (0|1)]
 //   [code...][calldata...]
@@ -19,7 +18,6 @@ const MAX_STACK: usize = 1024;
 const MEM_SIZE: usize = 65536; // 64 kB fixed memory
 const STORAGE_SLOTS: usize = 256;
 
-// ── Opcodes ──────────────────────────────────────────────────────
 const STOP: u8 = 0x00;
 const ADD: u8 = 0x01;
 const MUL: u8 = 0x02;
@@ -71,7 +69,6 @@ const SWAP1: u8 = 0x90;
 const RETURN: u8 = 0xF3;
 const REVERT: u8 = 0xFD;
 
-// ── EVM ──────────────────────────────────────────────────────────
 struct Evm<'a> {
     pc: usize,
     stack: [U256; MAX_STACK],
@@ -636,7 +633,6 @@ impl<'a> Evm<'a> {
     }
 }
 
-// ── Entry point ──────────────────────────────────────────────────
 core::arch::global_asm!(
     ".section .text._start",
     ".globl _start",
@@ -662,7 +658,6 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 
 #[no_mangle]
 pub extern "C" fn main() -> ! {
-    // Zero .bss
     unsafe {
         let bss_start = &_bss_start as *const u8 as usize;
         let bss_end = &_bss_end as *const u8 as usize;
@@ -670,13 +665,11 @@ pub extern "C" fn main() -> ! {
         core::ptr::write_bytes(bss_start as *mut u8, 0, len);
     }
 
-    // Read EVM bytecode + calldata + optional storage init from input region
     let (code, calldata, storage_init) = unsafe { read_input() };
 
     let mut evm = Evm::new(code, calldata, storage_init);
     let exit_code = evm.run();
 
-    // Write final storage after return data
     evm.write_final_storage();
 
     unsafe {
@@ -703,7 +696,6 @@ unsafe fn read_input<'a>() -> (&'a [u8], &'a [u8], Option<&'a [u32; STORAGE_SLOT
     (code, calldata, storage_init)
 }
 
-// ── Signed arithmetic (two's complement on U256) ─────────────────
 fn one() -> U256 {
     [1u32, 0, 0, 0, 0, 0, 0, 0]
 }

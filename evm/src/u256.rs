@@ -99,7 +99,6 @@ pub fn div(a: &U256, b: &U256) -> U256 {
     q
 }
 
-// mod (remainder of a / b)
 pub fn rem(a: &U256, b: &U256) -> U256 {
     let (_, r) = div_rem(a, b);
     r
