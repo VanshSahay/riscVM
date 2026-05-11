@@ -3,12 +3,19 @@
 package main
 
 import (
+	_ "embed"
+	"encoding/binary"
 	"fmt"
 	"syscall/js"
 
 	"github.com/VanshSahay/riscvm/vm"
 	"github.com/VanshSahay/riscvm/zk"
 )
+
+//go:embed evm.elf
+var evmELF []byte
+
+const evmInputAddr = 0x800000
 
 var (
 	cpu *vm.CPU
@@ -17,6 +24,7 @@ var (
 
 func main() {
 	js.Global().Set("riscvmLoadProgram", js.FuncOf(loadProgram))
+	js.Global().Set("riscvmLoadEVM", js.FuncOf(loadEVM))
 	js.Global().Set("riscvmStep", js.FuncOf(step))
 	js.Global().Set("riscvmGetPC", js.FuncOf(getPC))
 	js.Global().Set("riscvmGetRegs", js.FuncOf(getRegs))
@@ -116,6 +124,49 @@ func loadProgram(this js.Value, args []js.Value) interface{} {
 	cpu.PC = entry
 	cpu.Regs[2] = uint32(len(mem.Data))
 	return map[string]interface{}{"ok": true, "entry": entry}
+}
+
+func loadEVM(this js.Value, args []js.Value) interface{} {
+	// args[0]: EVM bytecode (Uint8Array)
+	// args[1]: optional calldata (Uint8Array)
+	if len(args) < 1 || args[0].Type() != js.TypeObject {
+		return map[string]interface{}{"ok": false, "error": "need EVM bytecode Uint8Array"}
+	}
+	codeLen := args[0].Get("length").Int()
+	code := make([]byte, codeLen)
+	js.CopyBytesToGo(code, args[0])
+
+	var calldata []byte
+	if len(args) >= 2 && args[1].Type() == js.TypeObject {
+		cdLen := args[1].Get("length").Int()
+		calldata = make([]byte, cdLen)
+		js.CopyBytesToGo(calldata, args[1])
+	}
+
+	mem = vm.NewMemory(0)
+	entry, err := vm.LoadELFBytes(evmELF, mem)
+	if err != nil {
+		return map[string]interface{}{"ok": false, "error": "failed to load EVM interpreter: " + err.Error()}
+	}
+
+	// Write EVM input at 0x800000
+	writeEVMInput(mem, code, calldata)
+
+	cpu = vm.NewCPU(mem)
+	cpu.Trace = &vm.Trace{}
+	cpu.Stdout = jsOutputWriter{}
+	cpu.PC = entry
+	cpu.Regs[2] = uint32(len(mem.Data))
+	return map[string]interface{}{"ok": true, "entry": entry}
+}
+
+func writeEVMInput(mem *vm.Memory, code, calldata []byte) {
+	const addr = evmInputAddr
+	binary.LittleEndian.PutUint32(mem.Data[addr:addr+4], uint32(len(code)))
+	binary.LittleEndian.PutUint32(mem.Data[addr+4:addr+8], uint32(len(calldata)))
+	binary.LittleEndian.PutUint32(mem.Data[addr+8:addr+12], 0) // no storage init
+	copy(mem.Data[addr+12:], code)
+	copy(mem.Data[addr+12+len(code):], calldata)
 }
 
 // jsOutputWriter sends write(1, ...) output to JS via window.riscvmAppendOutput(Uint8Array).
