@@ -376,6 +376,10 @@ impl<'a> Evm<'a> {
             0x32 => { // ORIGIN
                 self.push([1u32, 0, 0, 0, 0, 0, 0, 0]);
             }
+            0x31 => { // BALANCE — return 0
+                self.pop(); // ignore address
+                self.push(zero());
+            }
 
             // Calldata
             CALLDATALOAD => {
@@ -437,6 +441,17 @@ impl<'a> Evm<'a> {
                 if dst + n > self.ms {
                     self.grow_memory(dst + n);
                 }
+            }
+
+            // More environment / code opcodes
+            0x38 => { // CODESIZE
+                self.push([self.code.len() as u32, 0, 0, 0, 0, 0, 0, 0]);
+            }
+            0x3D => { // RETURNDATASIZE — no prior calls in our context
+                self.push(zero());
+            }
+            0x3E => { // RETURNDATACOPY — pop args and ignore
+                self.pop(); self.pop(); self.pop();
             }
 
             // Stack manipulation
@@ -537,6 +552,25 @@ impl<'a> Evm<'a> {
                 self.write_return_data(start, n);
                 self.stopped = true;
                 self.reverted = true;
+            }
+
+            // Gas — return a large constant
+            0x5A => { // GAS
+                self.push([0xFFFF_FFFFu32, 0xFFFF_FFFFu32, 0, 0, 0, 0, 0, 0]);
+            }
+
+            // Block environment — return 0
+            0x41 => { self.push(zero()); } // COINBASE
+            0x42 => { self.push(zero()); } // TIMESTAMP
+            0x43 => { self.push(zero()); } // NUMBER
+            0x44 => { self.push(zero()); } // DIFFICULTY / PREVRANDAO
+            0x45 => { self.push(zero()); } // GASLIMIT
+            0x46 => { self.push(zero()); } // CHAINID
+
+            // Logs — pop args and ignore (no-op)
+            0xA0..=0xA4 => { // LOG0-LOG4
+                self.pop(); // offset
+                self.pop(); // size
             }
 
             _ => {
