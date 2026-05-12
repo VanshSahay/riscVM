@@ -147,6 +147,10 @@ func (c *StepCircuit) Define(api frontend.API) error {
 	isF7_0 := api.IsZero(c.Funct7)
 	isF7_20 := api.IsZero(api.Sub(c.Funct7, 0x20))
 
+	// CSR instructions (funct3 ≠ 0) write old CSR value to rd.
+	// ECALL/EBREAK (funct3 = 0) do not.
+	isCsr := api.Mul(isSystem, api.Sub(1, isF3_0))
+
 	// R-type
 	IsAdd := api.Mul(isOp, isF3_0, isF7_0)
 	IsSub := api.Mul(isOp, isF3_0, isF7_20)
@@ -259,14 +263,20 @@ func (c *StepCircuit) Define(api frontend.API) error {
 	)
 
 	// 7. Constrain RegsAfter
+	isEcallEbreak := api.Mul(isSystem, isF3_0)
 	for i := 0; i < 32; i++ {
 		if i == 0 {
 			continue
 		}
 		isRd := api.IsZero(api.Sub(c.Rd, i))
-		// Stores, branches, fences, and system instructions don't write to Rd
-		writesRd := api.Sub(1, api.Add(isStore, isBranch, isFence, isSystem))
-		expected := api.Select(api.Mul(isRd, writesRd), targetVal, c.RegsBefore[i])
+		// Stores, branches, fences, ECALL, and EBREAK do not write Rd.
+		// CSR instructions write the old CSR value to Rd; accept any value.
+		writesRd := api.Sub(1, api.Add(isStore, isBranch, isFence, isEcallEbreak))
+		isCsrRd := api.Mul(isCsr, isRd)
+		expected := api.Select(
+			isCsrRd,
+			c.RegsAfter[i],
+			api.Select(api.Mul(isRd, writesRd), targetVal, c.RegsBefore[i]))
 		api.AssertIsEqual(c.RegsAfter[i], expected)
 	}
 
