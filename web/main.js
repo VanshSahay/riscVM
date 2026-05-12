@@ -47,10 +47,11 @@
       ).join('');
     }
 
+    const memSize = 16 * 1024 * 1024; // 16 MB
     const memLen = 256;
     const start = (pc & ~0xff) - 128;
-    const offset = Math.max(0, start);
-    const len = Math.min(memLen, 0x10000 - offset);
+    const offset = Math.max(0, Math.min(start, memSize - memLen));
+    const len = Math.min(memLen, memSize - offset);
     const mem = riscvmGetMemory(offset, len);
     if (mem && mem.length) {
       const lines = [];
