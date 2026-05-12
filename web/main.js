@@ -155,10 +155,16 @@
       }
       if (r.exited) {
         runInterval = null;
-        const out = riscvmGetEVMOutput ? riscvmGetEVMOutput() : '';
-        if (out) {
-          outputBuffer = out;
-          outputContentEl.textContent = out;
+        const outHex = riscvmGetEVMOutput ? riscvmGetEVMOutput() : '';
+        if (outHex && outHex.length === 64) {
+          try {
+            const val = BigInt('0x' + outHex);
+            outputContentEl.textContent = val.toString();
+          } catch (_) {
+            outputContentEl.textContent = outHex;
+          }
+        } else if (outHex) {
+          outputContentEl.textContent = outHex;
         }
         setStatus('Program exited with code ' + r.exitCode);
         updateUI();
@@ -243,6 +249,39 @@
   }
 
   // --- Solidity compilation ---
+
+  const solExamples = {
+    add: {
+      source: 'contract Adder {\n    function add(uint a, uint b) public pure returns (uint) {\n        return a + b;\n    }\n}',
+      contract: 'Adder',
+      func: 'add(uint256,uint256)',
+      args: '9, 11'
+    },
+    mul: {
+      source: 'contract Multiplier {\n    function mul(uint a, uint b) public pure returns (uint) {\n        return a * b;\n    }\n}',
+      contract: 'Multiplier',
+      func: 'mul(uint256,uint256)',
+      args: '6, 7'
+    },
+    sub: {
+      source: 'contract Subtract {\n    function sub(uint a, uint b) public pure returns (uint) {\n        return a - b;\n    }\n}',
+      contract: 'Subtract',
+      func: 'sub(uint256,uint256)',
+      args: '100, 37'
+    },
+    fib: {
+      source: 'contract Fib {\n    function fib(uint n) public pure returns (uint) {\n        uint a = 0;\n        uint b = 1;\n        for (uint i = 0; i < n; i++) {\n            uint c = a + b;\n            a = b;\n            b = c;\n        }\n        return a;\n    }\n}',
+      contract: 'Fib',
+      func: 'fib(uint256)',
+      args: '10'
+    },
+    div: {
+      source: 'contract Divider {\n    function div(uint a, uint b) public pure returns (uint) {\n        return a / b;\n    }\n}',
+      contract: 'Divider',
+      func: 'div(uint256,uint256)',
+      args: '100, 7'
+    }
+  };
 
   let solcWorker = null;
   let solcReqId = 0;
@@ -493,6 +532,17 @@
     onLoadSol().catch(e => {
       loadError.textContent = e.message || 'Compilation failed';
     });
+  });
+
+  const solExample = document.getElementById('solExample');
+  if (solExample) solExample.addEventListener('change', function () {
+    const ex = solExamples[this.value];
+    if (!ex) return;
+    document.getElementById('solSource').value = ex.source;
+    document.getElementById('solContract').value = ex.contract;
+    document.getElementById('solFunction').value = ex.func;
+    document.getElementById('solArgs').value = ex.args;
+    document.getElementById('solStatus').textContent = '';
   });
 
   if (btnStep) btnStep.addEventListener('click', onStep);

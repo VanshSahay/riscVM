@@ -513,3 +513,25 @@ html, body {
 .sol-status.error {
   color: #e07070;
 }
+
+.sol-example-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.sol-example-label select {
+  background: transparent;
+  border: var(--border);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.82rem;
+  padding: 0.3rem 0.5rem;
+  margin-left: 0.3rem;
+}
+
+.sol-example-label select:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.25);
+}

@@ -63,7 +63,15 @@
 
       <!-- Solidity tab -->
       <div class="tab-panel" id="tabSolidity">
-        <p class="hint">Paste Solidity source. A built-in compiler translates simple contracts (pure functions, basic storage) to EVM bytecode, then the zkVM proves execution step by step.</p>
+        <p class="hint">Paste Solidity source, or pick an example. The zkVM compiles it to EVM bytecode and proves execution step by step.</p>
+        <label class="sol-example-label">Example: <select id="solExample">
+          <option value="">— Custom —</option>
+          <option value="add">Adder (add two numbers)</option>
+          <option value="mul">Multiplier (multiply two numbers)</option>
+          <option value="sub">Subtract (subtract two numbers)</option>
+          <option value="div">Divider (divide two numbers)</option>
+          <option value="fib">Fibonacci (needs solc worker)</option>
+        </select></label>
         <textarea id="solSource" placeholder="contract Foo {&#10;  function add(uint a, uint b) public pure returns (uint) {&#10;    return a + b;&#10;  }&#10;}" rows="10"></textarea>
         <div class="sol-form">
           <label>Contract <input type="text" id="solContract" placeholder="Foo" /></label>
