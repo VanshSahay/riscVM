@@ -139,18 +139,30 @@
   function runLoop() {
     if (runInterval) return;
     if (!wasmReady || typeof riscvmRunToExit !== 'function') return;
+
     runInterval = true;
     setStatus('Running…');
-    setTimeout(function () {
-      const r = riscvmRunToExit();
-      runInterval = null;
-      if (r && r.ok) {
-        setStatus('Program exited with code ' + r.exitCode);
-      } else {
-        setStatus('Run failed: ' + (r ? r.error : 'unknown'));
+    const batch = 50000;
+
+    function tick() {
+      if (!runInterval) { updateUI(); return; }
+      const r = riscvmRunToExit(batch);
+      if (!r || !r.ok) {
+        runInterval = null;
+        setStatus('Run error: ' + (r ? r.error : 'unknown'));
+        updateUI();
+        return;
       }
-      updateUI();
-    }, 50);
+      if (r.exited) {
+        runInterval = null;
+        setStatus('Program exited with code ' + r.exitCode);
+        updateUI();
+        return;
+      }
+      requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
   }
 
   function stopRun() {
@@ -182,12 +194,13 @@
     const r = riscvmLoadProgram(uint8Array, asElf);
     if (r && r.ok) {
       resetUI();
-      setStatus('Compiling circuit…');
       updateUI();
-      setTimeout(function () {
-        if (typeof riscvmWarmup === 'function') riscvmWarmup();
+      if (typeof riscvmWarmup === 'function') {
+        setStatus('Compiling circuit…');
+        setTimeout(function () { riscvmWarmup(); setStatus('Ready.'); }, 10);
+      } else {
         setStatus('Program loaded. Entry ' + hex8(r.entry));
-      }, 20);
+      }
       return true;
     }
     if (r && r.error) return r.error;
@@ -201,12 +214,13 @@
     const r = riscvmLoadEVM(code, calldata || new Uint8Array(0));
     if (r && r.ok) {
       resetUI();
-      setStatus('Compiling circuit…');
       updateUI();
-      setTimeout(function () {
-        if (typeof riscvmWarmup === 'function') riscvmWarmup();
-        setStatus('EVM bytecode loaded. Ready.');
-      }, 20);
+      if (typeof riscvmWarmup === 'function') {
+        setStatus('Compiling circuit…');
+        setTimeout(function () { riscvmWarmup(); setStatus('Ready.'); }, 10);
+      } else {
+        setStatus('EVM bytecode loaded.');
+      }
       return true;
     }
     if (r && r.error) return r.error;

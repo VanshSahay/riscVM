@@ -242,24 +242,37 @@ func getLastInstruction(this js.Value, args []js.Value) interface{} {
 }
 
 func runToExit(this js.Value, args []js.Value) interface{} {
+	// Run a batch of steps without tracing/proving, yielding control
+	// so the browser stays responsive. Returns whether the program exited.
 	if cpu == nil {
 		return map[string]interface{}{"ok": false, "error": "no program"}
 	}
-	exitCode, err := cpu.Run()
-	if err != nil {
-		return map[string]interface{}{"ok": false, "error": err.Error()}
+	batch := 50000
+	if len(args) > 0 {
+		batch = args[0].Int()
 	}
-	return map[string]interface{}{"ok": true, "exitCode": exitCode}
+	for i := 0; i < batch; i++ {
+		if err := cpu.Step(); err != nil {
+			return map[string]interface{}{"ok": false, "error": err.Error()}
+		}
+		if cpu.Exited {
+			return map[string]interface{}{"ok": true, "exited": true, "exitCode": cpu.ExitCode}
+		}
+	}
+	return map[string]interface{}{"ok": true, "exited": false}
 }
 
 func warmup(this js.Value, args []js.Value) interface{} {
-	// Force one-time circuit compilation and Groth16 setup.
-	// The first call to ProveStep compiles the R1CS and runs the
-	// trusted setup — subsequent calls reuse the cached keys.
-	w := zk.StepCircuit{Instr: 0x13, Opcode: 0x13, Rd: 1, Rs1: 0, Imm: 0, Funct3: 0, Funct7: 0}
-	for i := range w.RegsBefore { w.RegsBefore[i] = 0 }
-	for i := range w.RegsAfter  { w.RegsAfter[i] = 0 }
-	w.RegsAfter[1] = 0 // ADDI x1, x0, 0
+	if cpu == nil || cpu.Trace == nil || len(*cpu.Trace) == 0 {
+		// No trace yet — do one step to get a valid witness, then verify.
+		if cpu == nil {
+			return map[string]interface{}{"ok": false, "error": "no program"}
+		}
+		cpu.Step()
+	}
+	trace := *cpu.Trace
+	currentStep := trace[len(trace)-1]
+	w := zk.GenerateWitness(currentStep, cpu.PC, cpu.Regs)
 	_, _ = zk.ProveStep(w)
 	return map[string]interface{}{"ok": true}
 }
