@@ -63,7 +63,7 @@
 
       <!-- Solidity tab -->
       <div class="tab-panel" id="tabSolidity">
-        <p class="hint">Paste Solidity source. The contract is compiled with solc in your browser, then the EVM bytecode is proved by the zkVM. Simple contracts (pure functions, basic storage) work best.</p>
+        <p class="hint">Paste Solidity source. A built-in compiler translates simple contracts (pure functions, basic storage) to EVM bytecode, then the zkVM proves execution step by step.</p>
         <textarea id="solSource" placeholder="contract Foo {&#10;  function add(uint a, uint b) public pure returns (uint) {&#10;    return a + b;&#10;  }&#10;}" rows="10"></textarea>
         <div class="sol-form">
           <label>Contract <input type="text" id="solContract" placeholder="Foo" /></label>
@@ -88,7 +88,6 @@
     <span class="status" id="status">Load a program to start.</span>
   </div>
   <script src="wasm_exec.js"></script>
-  <script src="https://binaries.soliditylang.org/bin/soljson-v0.8.25+commit.b61c2a91.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

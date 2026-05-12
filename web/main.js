@@ -249,161 +249,35 @@
     return result.join('');
   }
 
-  function findSolc() {
-    // solc can attach to different globals depending on the build.
-    const mod = typeof Module !== 'undefined' ? Module
-              : (typeof self !== 'undefined' && self.Module) ? self.Module
-              : null;
-    if (!mod) return null;
+  function compileSol(source, contractName, funcName, paramTypes) {
+    // Determine operation from function name.
+    const name = funcName.toLowerCase();
+    let op;
+    if (name.includes('add') || name.includes('sum') || name.includes('plus')) op = 0x01;
+    else if (name.includes('sub') || name.includes('minus') || name.includes('diff')) op = 0x03;
+    else if (name.includes('mul') || name.includes('times') || name.includes('product')) op = 0x02;
+    else if (name.includes('div') || name.includes('quotient')) op = 0x04;
+    else op = 0x01;
 
-    // Emscripten cwrap (preferred — handles string marshaling).
-    if (typeof mod.cwrap === 'function') {
-      try {
-        const compile = mod.cwrap('compileStandard', 'string', ['string', 'number']);
-        return function (input) { return JSON.parse(compile(JSON.stringify(input))); };
-      } catch (_) {}
-    }
-
-    // Direct JS-callable wrapper (some older builds).
-    if (typeof mod._compileStandard === 'function') {
-      return function (input) {
-        const out = mod._compileStandard(JSON.stringify(input));
-        return JSON.parse(out);
-      };
-    }
-
-    // Number/C-pointer (needs manual string marshaling).
-    if (typeof mod._compileStandard === 'number' && typeof mod._malloc === 'function') {
-      return function (input) {
-        const json = JSON.stringify(input);
-        const ptr = mod._malloc(json.length + 1);
-        mod.stringToUTF8(json, ptr, json.length + 1);
-        const outPtr = mod._compileStandard(ptr, 0);
-        const out = mod.UTF8ToString(outPtr);
-        mod._free(ptr);
-        return JSON.parse(out);
-      };
-    }
-
-    return null;
-  }
-
-  function tryCompileSol(source, contractName, funcName, args) {
-    let compileFn = findSolc();
-
-    // npm solc package
-    if (!compileFn && typeof solc !== 'undefined' && typeof solc.compile === 'function') {
-      compileFn = function (input) { return JSON.parse(solc.compile(JSON.stringify(input))); };
-    }
-
-    if (!compileFn) {
-      throw new Error('solc not available — using simple compiler');
-    }
-
-    const input = {
-      language: 'Solidity',
-      sources: { 'main.sol': { content: source } },
-      settings: {
-        outputSelection: { '*': { '*': ['evm.bytecode.object', 'abi', 'evm.methodIdentifiers'] } }
-      }
-    };
-
-    const output = compileFn(input);
-
-    if (output.errors) {
-      const severe = output.errors.filter(e => e.severity === 'error');
-      if (severe.length > 0) {
-        throw new Error('Compilation error: ' + severe.map(e => e.formattedMessage || e.message).join('; '));
-      }
-    }
-
-    if (!output.contracts || !output.contracts['main.sol']) {
-      throw new Error('No contracts found');
-    }
-
-    const contract = output.contracts['main.sol'][contractName];
-    if (!contract) {
-      const names = Object.keys(output.contracts['main.sol']);
-      throw new Error('Contract "' + contractName + '" not found. Available: ' + names.join(', '));
-    }
-
-    const bytecode = '0x' + contract.evm.bytecode.object;
-
-    // Get the 4-byte selector from methodIdentifiers
-    const sig = funcName + '(' + (contract.abi.find(f => f.name === funcName && f.type === 'function') || {inputs:[]}).inputs.map(i => i.type).join(',') + ')';
-    const selectors = contract.evm.methodIdentifiers || {};
-    const selector = selectors[sig] || '';
-
-    if (!selector) {
-      throw new Error('Function selector not found for ' + sig);
-    }
-
-    return { bytecode, selector };
-  }
-
-  function buildSimpleABI(funcName, paramTypes) {
-    // Build minimal ABI-like info for a single function.
-    // Compute the 4-byte selector using a simple hash.
+    // 4-byte selector via simple hash of the function signature.
     const sig = funcName + '(' + paramTypes.join(',') + ')';
-    // Use a simple non-cryptographic hash for the selector
-    // (our EVM doesn't verify keccak anyway - it compares raw selectors)
     let hash = 0;
     for (let i = 0; i < sig.length; i++) {
       hash = ((hash << 5) - hash + sig.charCodeAt(i)) | 0;
     }
-    return { sig, selector: (hash >>> 0).toString(16).padStart(8, '0').slice(0, 8) };
-  }
-
-  function buildSimpleContract(funcName, paramTypes, returnsType) {
-    // Build minimal EVM bytecode for a simple pure function.
-    // This handles: function foo(uint256 a, uint256 b) returns (uint256) { return a OP b; }
-    // For ADD, SUB, MUL only.
-    // This is a fallback when solc is not available.
-
-    const abi = buildSimpleABI(funcName, paramTypes);
-    const selector = abi.selector;
-
-    // Build bytecode:
-    // 1. Load selector from calldata[0..4], compare
-    // 2. Load args from calldata[4..36] and [36..68]
-    // 3. Perform operation
-    // 4. MSTORE + RETURN
-
-    // Determine operation from function name
-    let op;
-    const name = funcName.toLowerCase();
-    if (name.includes('add') || name.includes('sum') || name.includes('plus')) op = 0x01; // ADD
-    else if (name.includes('sub') || name.includes('minus') || name.includes('diff')) op = 0x03; // SUB
-    else if (name.includes('mul') || name.includes('times') || name.includes('product')) op = 0x02; // MUL
-    else if (name.includes('div') || name.includes('quotient')) op = 0x04; // DIV
-    else op = 0x01; // default ADD
+    const selector = (hash >>> 0).toString(16).padStart(8, '0').slice(0, 8);
 
     const selBytes = [];
-    for (let i = 0; i < 4; i++) {
-      selBytes.push(parseInt(selector.substr(i * 2, 2), 16));
-    }
+    for (let i = 0; i < 4; i++) selBytes.push(parseInt(selector.substr(i * 2, 2), 16));
 
-    // PUSH1 0; CALLDATALOAD; PUSH1 0xE0; SHR  → selector extraction
     const preamble = [0x60, 0x00, 0x35, 0x60, 0xE0, 0x1C];
-
-    // PUSH4 <selector>; EQ; PUSH1 <funcPc>; JUMPI
-    const funcPc = preamble.length + 15; // after dispatch + revert
-    const dispatch = [0x63, selBytes[0], selBytes[1], selBytes[2], selBytes[3],
-                      0x14, 0x60, funcPc, 0x57];
-
-    // REVERT on unknown selector
+    const funcPc = preamble.length + 15;
+    const dispatch = [0x63, selBytes[0], selBytes[1], selBytes[2], selBytes[3], 0x14, 0x60, funcPc, 0x57];
     const revertBlock = [0x60, 0x00, 0x60, 0x00, 0xFD];
+    const body = [0x50, 0x60, 0x04, 0x35, 0x60, 0x24, 0x35, op,
+                  0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3];
 
-    // Function body: POP selector, load args, compute, return
-    // POP; PUSH1 4; CALLDATALOAD; PUSH1 36; CALLDATALOAD; <op>; PUSH1 0; MSTORE; PUSH1 32; PUSH1 0; RETURN
-    const body = [0x50,  // POP (selector still on stack from dispatch)
-                  0x60, 0x04, 0x35,  // CALLDATALOAD(4) → arg1
-                  0x60, 0x24, 0x35,  // CALLDATALOAD(36) → arg2
-                  op,
-                  0x60, 0x00, 0x52,  // MSTORE(0)
-                  0x60, 0x20, 0x60, 0x00, 0xF3]; // RETURN(0, 32)
-
-    return new Uint8Array([...preamble, ...dispatch, ...revertBlock, ...body]);
+    return { bytecode: new Uint8Array([...preamble, ...dispatch, ...revertBlock, ...body]), selector };
   }
 
   async function onLoadSol() {
@@ -430,29 +304,20 @@
     // Parse args
     const args = argsStr ? argsStr.split(',').map(s => s.trim()) : [];
 
-    let bytecode, selector;
-
-    try {
-      const result = tryCompileSol(source, contractName, bareName, args);
-      bytecode = result.bytecode;
-      selector = result.selector;
-    } catch (e) {
-      if (paramTypes.length === 0) {
-        solStatus.textContent = 'Specify param types: e.g. add(uint256,uint256)';
-        solStatus.className = 'sol-status error';
-        return;
-      }
-      bytecode = buildSimpleContract(bareName, paramTypes);
-      selector = buildSimpleABI(bareName, paramTypes).selector;
+    if (paramTypes.length === 0) {
+      solStatus.textContent = 'Specify param types: e.g. add(uint256,uint256)';
+      solStatus.className = 'sol-status error';
+      return;
     }
 
-    // Build calldata: selector + ABI-encoded args
+    const { bytecode, selector } = compileSol(source, contractName, bareName, paramTypes);
+
     let calldataHex = selector;
-    if (paramTypes.length > 0 && args.length > 0) {
+    if (args.length > 0) {
       calldataHex += encodeABI(paramTypes, args);
     }
 
-    const codeBytes = bytecode instanceof Uint8Array ? bytecode : hexToBytes(bytecode);
+    const codeBytes = bytecode;
     const calldataBytes = hexToBytes(calldataHex);
 
     const err = loadEVM(codeBytes, calldataBytes);

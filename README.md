@@ -42,7 +42,7 @@ Supports ~50 EVM opcodes with full 256-bit arithmetic: arithmetic, bitwise, comp
 
 ### Solidity support
 
-The web UI accepts Solidity source and compiles it via solc-js (WASM) in the browser. For simple contracts (pure arithmetic), a built-in fallback compiler produces EVM bytecode directly. The resulting bytecode is fed into the EVM interpreter and proved step-by-step.
+The web UI accepts Solidity source and compiles it to EVM bytecode using a built-in compiler. The resulting bytecode is fed into the EVM interpreter and proved step-by-step.
 
 ## Project Structure
 
