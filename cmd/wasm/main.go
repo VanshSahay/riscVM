@@ -35,6 +35,7 @@ func main() {
 	js.Global().Set("riscvmVerifyLastStep", js.FuncOf(verifyLastStep))
 	js.Global().Set("riscvmRunToExit", js.FuncOf(runToExit))
 	js.Global().Set("riscvmWarmup", js.FuncOf(warmup))
+	js.Global().Set("riscvmGetEVMOutput", js.FuncOf(getEVMOutput))
 	<-make(chan struct{})
 }
 
@@ -275,4 +276,22 @@ func warmup(this js.Value, args []js.Value) interface{} {
 	w := zk.GenerateWitness(currentStep, cpu.PC, cpu.Regs)
 	_, _ = zk.ProveStep(w)
 	return map[string]interface{}{"ok": true}
+}
+
+func getEVMOutput(this js.Value, args []js.Value) interface{} {
+	// Read EVM return data from the shared memory at 0x800000.
+	// Format: [u32 LE: return_len][return bytes...]
+	if mem == nil {
+		return ""
+	}
+	const addr = evmInputAddr
+	length := int(binary.LittleEndian.Uint32(mem.Data[addr : addr+4]))
+	if length == 0 || addr+4+length > len(mem.Data) {
+		return ""
+	}
+	var hex string
+	for _, b := range mem.Data[addr+4 : addr+4+length] {
+		hex += fmt.Sprintf("%02x", b)
+	}
+	return hex
 }

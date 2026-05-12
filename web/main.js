@@ -155,6 +155,11 @@
       }
       if (r.exited) {
         runInterval = null;
+        const out = riscvmGetEVMOutput ? riscvmGetEVMOutput() : '';
+        if (out) {
+          outputBuffer = out;
+          outputContentEl.textContent = out;
+        }
         setStatus('Program exited with code ' + r.exitCode);
         updateUI();
         return;
