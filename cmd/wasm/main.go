@@ -33,6 +33,8 @@ func main() {
 	js.Global().Set("riscvmGetExited", js.FuncOf(getExited))
 	js.Global().Set("riscvmGetExitCode", js.FuncOf(getExitCode))
 	js.Global().Set("riscvmVerifyLastStep", js.FuncOf(verifyLastStep))
+	js.Global().Set("riscvmRunToExit", js.FuncOf(runToExit))
+	js.Global().Set("riscvmWarmup", js.FuncOf(warmup))
 	<-make(chan struct{})
 }
 
@@ -237,4 +239,27 @@ func getLastInstruction(this js.Value, args []js.Value) interface{} {
 	}
 	instr := mem.LoadWord(cpu.LastPC)
 	return vm.FormatInstruction(instr)
+}
+
+func runToExit(this js.Value, args []js.Value) interface{} {
+	if cpu == nil {
+		return map[string]interface{}{"ok": false, "error": "no program"}
+	}
+	exitCode, err := cpu.Run()
+	if err != nil {
+		return map[string]interface{}{"ok": false, "error": err.Error()}
+	}
+	return map[string]interface{}{"ok": true, "exitCode": exitCode}
+}
+
+func warmup(this js.Value, args []js.Value) interface{} {
+	// Force one-time circuit compilation and Groth16 setup.
+	// The first call to ProveStep compiles the R1CS and runs the
+	// trusted setup — subsequent calls reuse the cached keys.
+	w := zk.StepCircuit{Instr: 0x13, Opcode: 0x13, Rd: 1, Rs1: 0, Imm: 0, Funct3: 0, Funct7: 0}
+	for i := range w.RegsBefore { w.RegsBefore[i] = 0 }
+	for i := range w.RegsAfter  { w.RegsAfter[i] = 0 }
+	w.RegsAfter[1] = 0 // ADDI x1, x0, 0
+	_, _ = zk.ProveStep(w)
+	return map[string]interface{}{"ok": true}
 }

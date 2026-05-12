@@ -138,31 +138,23 @@
 
   function runLoop() {
     if (runInterval) return;
-    runInterval = setInterval(() => {
-      if (!wasmReady) return;
-      // Run a small batch to keep UI responsive while showing proofs
-      for (let i = 0; i < 10; i++) {
-        riscvmStep();
-        updateHistory();
-        onVerify();
-        if (riscvmGetExited && riscvmGetExited()) {
-          clearInterval(runInterval);
-          runInterval = null;
-          setStatus('Program exited with code ' + (riscvmGetExitCode ? riscvmGetExitCode() : 0));
-          updateUI();
-          return;
-        }
+    if (!wasmReady || typeof riscvmRunToExit !== 'function') return;
+    runInterval = true;
+    setStatus('Running…');
+    setTimeout(function () {
+      const r = riscvmRunToExit();
+      runInterval = null;
+      if (r && r.ok) {
+        setStatus('Program exited with code ' + r.exitCode);
+      } else {
+        setStatus('Run failed: ' + (r ? r.error : 'unknown'));
       }
       updateUI();
     }, 50);
-    setStatus('Running…');
   }
 
   function stopRun() {
-    if (runInterval) {
-      clearInterval(runInterval);
-      runInterval = null;
-    }
+    runInterval = null;
   }
 
   function parseBase64(str) {
@@ -190,8 +182,12 @@
     const r = riscvmLoadProgram(uint8Array, asElf);
     if (r && r.ok) {
       resetUI();
-      setStatus('Program loaded. Entry ' + hex8(r.entry));
+      setStatus('Compiling circuit…');
       updateUI();
+      setTimeout(function () {
+        if (typeof riscvmWarmup === 'function') riscvmWarmup();
+        setStatus('Program loaded. Entry ' + hex8(r.entry));
+      }, 20);
       return true;
     }
     if (r && r.error) return r.error;
@@ -205,8 +201,12 @@
     const r = riscvmLoadEVM(code, calldata || new Uint8Array(0));
     if (r && r.ok) {
       resetUI();
-      setStatus('EVM bytecode loaded. Entry ' + hex8(r.entry) + ' (EVM interpreter)');
+      setStatus('Compiling circuit…');
       updateUI();
+      setTimeout(function () {
+        if (typeof riscvmWarmup === 'function') riscvmWarmup();
+        setStatus('EVM bytecode loaded. Ready.');
+      }, 20);
       return true;
     }
     if (r && r.error) return r.error;
