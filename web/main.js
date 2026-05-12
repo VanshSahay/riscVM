@@ -230,7 +230,9 @@
     // values: array of strings
     const result = [];
     for (let i = 0; i < types.length; i++) {
-      const t = types[i].trim();
+      // Normalize Solidity type aliases (uint = uint256, etc.)
+      let t = types[i].trim();
+      if (t === 'uint' || t === 'uint256') t = 'uint256';
       const v = values[i].trim();
       if (t === 'uint256') {
         const n = BigInt(v);
@@ -299,7 +301,9 @@
     // Parse function signature: "add(uint256,uint256)" or "add"
     const sigMatch = funcName.match(/^(\w+)\(([^)]*)\)$/);
     const bareName = sigMatch ? sigMatch[1] : funcName;
-    const paramTypes = sigMatch && sigMatch[2] ? sigMatch[2].split(',').map(s => s.trim()) : [];
+    const paramTypes = sigMatch && sigMatch[2]
+      ? sigMatch[2].split(',').map(s => { const t = s.trim(); return (t === 'uint' || t === 'int') ? 'uint256' : t; })
+      : [];
 
     // Parse args
     const args = argsStr ? argsStr.split(',').map(s => s.trim()) : [];
