@@ -367,9 +367,8 @@
 
     let calldataHex = selector;
     if (args.length > 0) calldataHex += encodeABI(paramTypes, args);
-    const calldataBytes = hexToBytes(calldataHex);
 
-    const err = loadEVM(codeBytes, calldataBytes);
+    const err = loadEVM(bytecode, hexToBytes(calldataHex));
     if (err === true) {
       overlay.hidden = true;
       solStatus.textContent = 'Compiled & loaded. Use Step/Run to execute.';
