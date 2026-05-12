@@ -153,6 +153,15 @@
         updateUI();
         return;
       }
+      // Show the latest instruction so the user sees progress.
+      const last = riscvmGetLastInstruction ? riscvmGetLastInstruction() : '';
+      if (last) {
+        instrHistory.push(last);
+        if (instrHistory.length > MAX_HISTORY) instrHistory.shift();
+        instrHistoryEl.innerHTML = instrHistory.map(s => '<div>' + escapeHtml(s) + '</div>').reverse().join('');
+        instrCurrentEl.textContent = last;
+      }
+      updateUI();
       if (r.exited) {
         runInterval = null;
         const outHex = riscvmGetEVMOutput ? riscvmGetEVMOutput() : '';
