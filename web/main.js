@@ -224,6 +224,45 @@
 
   // --- Solidity compilation ---
 
+  let solcWorker = null;
+  let solcReqId = 0;
+  const solcCallbacks = {};
+
+  function getSolcWorker() {
+    if (!solcWorker) {
+      try {
+        solcWorker = new Worker('solc-worker.js');
+        solcWorker.onmessage = function (e) {
+          const cb = solcCallbacks[e.data.id];
+          if (!cb) return;
+          delete solcCallbacks[e.data.id];
+          if (e.data.type === 'result') cb.resolve(e.data);
+          else cb.reject(new Error(e.data.error || 'solc error'));
+        };
+        solcWorker.onerror = function () {
+          solcWorker = null;
+        };
+      } catch (_) {
+        solcWorker = null;
+      }
+    }
+    return solcWorker;
+  }
+
+  function compileWithSolc(source, contractName) {
+    const worker = getSolcWorker();
+    if (!worker) return Promise.reject(new Error('Web Worker not available'));
+    const id = ++solcReqId;
+    return new Promise(function (resolve, reject) {
+      solcCallbacks[id] = { resolve: resolve, reject: reject };
+      worker.postMessage({ id: id, source: source, contractName: contractName });
+      // Timeout after 60s
+      setTimeout(function () {
+        if (solcCallbacks[id]) { delete solcCallbacks[id]; reject(new Error('solc timed out')); }
+      }, 60000);
+    });
+  }
+
   function encodeABI(types, values) {
     // Encode function arguments per Ethereum ABI
     // types: array of 'uint256', 'address', 'bool', 'bytes32'
@@ -251,8 +290,7 @@
     return result.join('');
   }
 
-  function compileSol(source, contractName, funcName, paramTypes) {
-    // Determine operation from function name.
+  function compileSimple(funcName, paramTypes) {
     const name = funcName.toLowerCase();
     let op;
     if (name.includes('add') || name.includes('sum') || name.includes('plus')) op = 0x01;
@@ -261,25 +299,20 @@
     else if (name.includes('div') || name.includes('quotient')) op = 0x04;
     else op = 0x01;
 
-    // 4-byte selector via simple hash of the function signature.
     const sig = funcName + '(' + paramTypes.join(',') + ')';
     let hash = 0;
-    for (let i = 0; i < sig.length; i++) {
-      hash = ((hash << 5) - hash + sig.charCodeAt(i)) | 0;
-    }
+    for (let i = 0; i < sig.length; i++) hash = ((hash << 5) - hash + sig.charCodeAt(i)) | 0;
     const selector = (hash >>> 0).toString(16).padStart(8, '0').slice(0, 8);
 
-    const selBytes = [];
-    for (let i = 0; i < 4; i++) selBytes.push(parseInt(selector.substr(i * 2, 2), 16));
-
-    const preamble = [0x60, 0x00, 0x35, 0x60, 0xE0, 0x1C];
-    const funcPc = preamble.length + 15;
-    const dispatch = [0x63, selBytes[0], selBytes[1], selBytes[2], selBytes[3], 0x14, 0x60, funcPc, 0x57];
-    const revertBlock = [0x60, 0x00, 0x60, 0x00, 0xFD];
+    const sel = [];
+    for (let i = 0; i < 4; i++) sel.push(parseInt(selector.substr(i * 2, 2), 16));
+    const pre = [0x60, 0x00, 0x35, 0x60, 0xE0, 0x1C];
+    const pc = pre.length + 15;
     const body = [0x50, 0x60, 0x04, 0x35, 0x60, 0x24, 0x35, op,
                   0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3];
 
-    return { bytecode: new Uint8Array([...preamble, ...dispatch, ...revertBlock, ...body]), selector };
+    return { bytecode: new Uint8Array([...pre, 0x63, sel[0], sel[1], sel[2], sel[3], 0x14, 0x60, pc, 0x57,
+                                       0x60, 0x00, 0x60, 0x00, 0xFD, ...body]), selector };
   }
 
   async function onLoadSol() {
@@ -314,14 +347,23 @@
       return;
     }
 
-    const { bytecode, selector } = compileSol(source, contractName, bareName, paramTypes);
+    let bytecode, selector;
 
-    let calldataHex = selector;
-    if (args.length > 0) {
-      calldataHex += encodeABI(paramTypes, args);
+    try {
+      const result = await compileWithSolc(source, contractName);
+      bytecode = hexToBytes(result.bytecode);
+      const sig = bareName + '(' + paramTypes.join(',') + ')';
+      selector = result.methodIdentifiers[sig] || '';
+      if (!selector) throw new Error('selector not found for ' + sig);
+    } catch (e) {
+      // Fallback to simple compiler
+      const r = compileSimple(bareName, paramTypes);
+      bytecode = r.bytecode;
+      selector = r.selector;
     }
 
-    const codeBytes = bytecode;
+    let calldataHex = selector;
+    if (args.length > 0) calldataHex += encodeABI(paramTypes, args);
     const calldataBytes = hexToBytes(calldataHex);
 
     const err = loadEVM(codeBytes, calldataBytes);
