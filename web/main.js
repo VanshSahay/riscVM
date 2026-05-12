@@ -335,7 +335,10 @@
     const sigMatch = funcName.match(/^(\w+)\(([^)]*)\)$/);
     const bareName = sigMatch ? sigMatch[1] : funcName;
     const paramTypes = sigMatch && sigMatch[2]
-      ? sigMatch[2].split(',').map(s => { const t = s.trim(); return (t === 'uint' || t === 'int') ? 'uint256' : t; })
+      ? sigMatch[2].split(',').map(s => {
+          const t = s.trim().split(/\s+/)[0]; // strip param name: "uint a" → "uint"
+          return (t === 'uint' || t === 'int') ? 'uint256' : (t === 'uint8' ? 'uint256' : t);
+        })
       : [];
 
     // Parse args
